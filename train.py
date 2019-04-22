@@ -8,7 +8,6 @@ from timeit import default_timer as timer
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from torch.autograd import Variable
 
 import options
 from dataloader import VisDialDataset
@@ -143,16 +142,16 @@ for epochId, idx, batch in batch_iter(dataloader):
         batch = {key: v.cuda() if hasattr(v, 'cuda') \
                                     else v for key, v in batch.items()}
 
-    image = Variable(batch['img_feat'], requires_grad=False)
-    caption = Variable(batch['cap'], requires_grad=False)
-    captionLens = Variable(batch['cap_len'], requires_grad=False)
-    gtQuestions = Variable(batch['ques'], requires_grad=False)
-    gtQuesLens = Variable(batch['ques_len'], requires_grad=False)
-    gtAnswers = Variable(batch['ans'], requires_grad=False)
-    gtAnsLens = Variable(batch['ans_len'], requires_grad=False)
-    options = Variable(batch['opt'], requires_grad=False)
-    optionLens = Variable(batch['opt_len'], requires_grad=False)
-    gtAnsId = Variable(batch['ans_id'], requires_grad=False)
+    image = batch['img_feat']
+    caption = batch['cap']
+    captionLens = batch['cap_len']
+    gtQuestions = batch['ques']
+    gtQuesLens = batch['ques_len']
+    gtAnswers = batch['ans']
+    gtAnsLens = batch['ans_len']
+    options = batch['opt']
+    optionLens = batch['opt_len']
+    gtAnsId = batch['ans_id']
 
     # Initializing optimizer and losses
     optimizer.zero_grad()
