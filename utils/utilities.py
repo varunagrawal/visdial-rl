@@ -4,7 +4,6 @@ import math
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch.autograd import Variable
 from torch.nn.utils.rnn import pack_padded_sequence
 
 from six import iteritems
@@ -176,8 +175,7 @@ def getSortedOrder(lens):
     sortedLen, fwdOrder = torch.sort(
         lens.contiguous().view(-1), dim=0, descending=True)
     _, bwdOrder = torch.sort(fwdOrder)
-    if isinstance(sortedLen, Variable):
-        sortedLen = sortedLen.data
+    sortedLen = sortedLen.data
     sortedLen = sortedLen.cpu().numpy().tolist()
     return sortedLen, fwdOrder, bwdOrder
 
@@ -244,15 +242,11 @@ def maskedNll(seq, gtSeq, returnScores=False):
     '''
     # Shifting gtSeq 1 token left to remove <START>
     padColumn = gtSeq.data.new(gtSeq.size(0), 1).fill_(0)
-    padColumn = Variable(padColumn)
     target = torch.cat([gtSeq, padColumn], dim=1)[:, 1:]
 
     # Generate a mask of non-padding (non-zero) tokens
     mask = target.data.gt(0)
     loss = 0
-    if isinstance(gtSeq, Variable):
-        mask = Variable(mask, volatile=gtSeq.volatile)
-    assert isinstance(target, Variable)
     gtLogProbs = torch.gather(seq, 2, target.unsqueeze(2)).squeeze(2)
     # Mean sentence probs:
     # gtLogProbs = gtLogProbs/(mask.float().sum(1).view(-1,1))
@@ -283,8 +277,8 @@ def concatPaddedSequences(seq1, seqLens1, seq2, seqLens2, padding='right'):
     maxCatLen = cat_seq.size(1)
     batchSize = seq1.size(0)
     for b_idx in range(batchSize):
-        len_1 = seqLens1[b_idx].data[0]
-        len_2 = seqLens2[b_idx].data[0]
+        len_1 = seqLens1[b_idx].data.item()
+        len_2 = seqLens2[b_idx].data.item()
 
         cat_len_ = len_1 + len_2
         if cat_len_ == 0:

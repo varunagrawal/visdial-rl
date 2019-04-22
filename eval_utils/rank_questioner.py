@@ -72,13 +72,13 @@ def rankQBot(qBot, dataset, split, exampleLimit=None, verbose=0):
                 key: v.contiguous()
                 for key, v in batch.items() if hasattr(v, 'cuda')
             }
-        caption = Variable(batch['cap'], volatile=True)
-        captionLens = Variable(batch['cap_len'], volatile=True)
-        gtQuestions = Variable(batch['ques'], volatile=True)
-        gtQuesLens = Variable(batch['ques_len'], volatile=True)
-        answers = Variable(batch['ans'], volatile=True)
-        ansLens = Variable(batch['ans_len'], volatile=True)
-        gtFeatures = Variable(batch['img_feat'], volatile=True)
+        caption = batch['cap']
+        captionLens = batch['cap_len']
+        gtQuestions = batch['ques']
+        gtQuesLens = batch['ques_len']
+        answers = batch['ans']
+        ansLens = batch['ans_len']
+        gtFeatures = batch['img_feat']
         qBot.reset()
         qBot.observe(-1, caption=caption, captionLens=captionLens)
         predFeatures = qBot.predictImage()
@@ -87,24 +87,25 @@ def rankQBot(qBot, dataset, split, exampleLimit=None, verbose=0):
         featLossAll[0].append(torch.mean(featLoss))
         # Keeping round 0 predictions
         roundwiseFeaturePreds[0].append(predFeatures)
-        for round in range(numRounds):
-            qBot.observe(
-                round,
-                ques=gtQuestions[:, round],
-                quesLens=gtQuesLens[:, round])
-            qBot.observe(
-                round, ans=answers[:, round], ansLens=ansLens[:, round])
-            logProbsCurrent = qBot.forward()
-            # Evaluating logProbs for cross entropy
-            logProbsAll[round].append(
-                utils.maskedNll(logProbsCurrent,
-                                gtQuestions[:, round].contiguous()))
-            predFeatures = qBot.predictImage()
-            # Evaluating feature regression network
-            featLoss = F.mse_loss(predFeatures, gtFeatures)
-            featLossAll[round + 1].append(torch.mean(featLoss))
-            # Keeping predictions
-            roundwiseFeaturePreds[round + 1].append(predFeatures)
+        with torch.no_grad():
+            for round in range(numRounds):
+                qBot.observe(
+                    round,
+                    ques=gtQuestions[:, round],
+                    quesLens=gtQuesLens[:, round])
+                qBot.observe(
+                    round, ans=answers[:, round], ansLens=ansLens[:, round])
+                logProbsCurrent = qBot.forward()
+                # Evaluating logProbs for cross entropy
+                logProbsAll[round].append(
+                    utils.maskedNll(logProbsCurrent,
+                                    gtQuestions[:, round].contiguous()))
+                predFeatures = qBot.predictImage()
+                # Evaluating feature regression network
+                featLoss = F.mse_loss(predFeatures, gtFeatures)
+                featLossAll[round + 1].append(torch.mean(featLoss))
+                # Keeping predictions
+                roundwiseFeaturePreds[round + 1].append(predFeatures)
         gtImgFeatures.append(gtFeatures)
 
         end_t = timer()
@@ -120,10 +121,10 @@ def rankQBot(qBot, dataset, split, exampleLimit=None, verbose=0):
     poolSize = len(dataset)
 
     # Keeping tracking of feature regression loss and CE logprobs
-    logProbsAll = [torch.cat(lprobs, 0).mean() for lprobs in logProbsAll]
-    featLossAll = [torch.cat(floss, 0).mean() for floss in featLossAll]
-    roundwiseLogProbs = torch.cat(logProbsAll, 0).data.cpu().numpy()
-    roundwiseFeatLoss = torch.cat(featLossAll, 0).data.cpu().numpy()
+    logProbsAll = [torch.stack(lprobs).mean() for lprobs in logProbsAll]
+    featLossAll = [torch.stack(floss).mean() for floss in featLossAll]
+    roundwiseLogProbs = torch.stack(logProbsAll).data.cpu().numpy()
+    roundwiseFeatLoss = torch.stack(featLossAll).data.cpu().numpy()
     logProbsMean = roundwiseLogProbs.mean()
     featLossMean = roundwiseFeatLoss.mean()
 

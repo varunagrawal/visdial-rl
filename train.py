@@ -2,8 +2,6 @@ import os
 import gc
 import random
 import pprint
-from six.moves import range
-from markdown2 import markdown
 from time import gmtime, strftime
 from timeit import default_timer as timer
 
@@ -316,9 +314,9 @@ for epochId, idx, batch in batch_iter(dataloader):
 
     # Tracking a running average of loss
     if runningLoss is None:
-        runningLoss = loss.data[0]
+        runningLoss = loss.data.item()
     else:
-        runningLoss = 0.95 * runningLoss + 0.05 * loss.data[0]
+        runningLoss = 0.95 * runningLoss + 0.05 * loss.data.item()
 
     # Decay learning rate
     if lRate > params['minLRate']:
@@ -342,22 +340,22 @@ for epochId, idx, batch in batch_iter(dataloader):
         printFormat = '[%s][Ep: %.2f][Iter: %d][Time: %5.2fs][Loss: %.3g]'
         printFormat += '[lr: %.3g]'
         printInfo = [
-            timeStamp, curEpoch, iterId, end_t - start_t, loss.data[0], lRate
+            timeStamp, curEpoch, iterId, end_t - start_t, loss.data.item(), lRate
         ]
         start_t = end_t
         print(printFormat % tuple(printInfo))
 
         # Update line plots
         if isinstance(aBotLoss, Variable):
-            viz.linePlot(iterId, aBotLoss.data[0], 'aBotLoss', 'train CE')
+            viz.linePlot(iterId, aBotLoss.data.item(), 'aBotLoss', 'train CE')
         if isinstance(qBotLoss, Variable):
-            viz.linePlot(iterId, qBotLoss.data[0], 'qBotLoss', 'train CE')
+            viz.linePlot(iterId, qBotLoss.data.item(), 'qBotLoss', 'train CE')
         if isinstance(rlLoss, Variable):
-            viz.linePlot(iterId, rlLoss.data[0], 'rlLoss', 'train')
+            viz.linePlot(iterId, rlLoss.data.item(), 'rlLoss', 'train')
         if isinstance(featLoss, Variable):
-            viz.linePlot(iterId, featLoss.data[0], 'featLoss',
+            viz.linePlot(iterId, featLoss.data.item(), 'featLoss',
                          'train FeatureRegressionLoss')
-        viz.linePlot(iterId, loss.data[0], 'loss', 'train loss')
+        viz.linePlot(iterId, loss.data.item(), 'loss', 'train loss')
         viz.linePlot(iterId, runningLoss, 'loss', 'running train loss')
 
     # Evaluate every epoch
