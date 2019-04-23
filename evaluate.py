@@ -10,7 +10,6 @@ from timeit import default_timer as timer
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from torch.autograd import Variable
 
 import options
 from dataloader import VisDialDataset

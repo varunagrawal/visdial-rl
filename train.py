@@ -106,7 +106,7 @@ if params['continue']:  # Restoring optimizer state
     optimizer.load_state_dict(optim_state)
 runningLoss = None
 
-mse_criterion = nn.MSELoss(reduce=False)
+mse_criterion = nn.MSELoss(reduction='none')
 
 numIterPerEpoch = dataset.numDataPoints['train'] // params['batchSize']
 print('\n%d iter per epoch.' % numIterPerEpoch)
@@ -345,16 +345,17 @@ for epochId, idx, batch in batch_iter(dataloader):
         print(printFormat % tuple(printInfo))
 
         # Update line plots
-        if isinstance(aBotLoss, Variable):
+        if isinstance(aBotLoss, torch.Tensor):
             viz.linePlot(iterId, aBotLoss.data.item(), 'aBotLoss', 'train CE')
-        if isinstance(qBotLoss, Variable):
+        if isinstance(qBotLoss, torch.Tensor):
             viz.linePlot(iterId, qBotLoss.data.item(), 'qBotLoss', 'train CE')
-        if isinstance(rlLoss, Variable):
+        if isinstance(rlLoss, torch.Tensor):
             viz.linePlot(iterId, rlLoss.data.item(), 'rlLoss', 'train')
-        if isinstance(featLoss, Variable):
+        if isinstance(featLoss, torch.Tensor):
             viz.linePlot(iterId, featLoss.data.item(), 'featLoss',
-                         'train FeatureRegressionLoss')
-        viz.linePlot(iterId, loss.data.item(), 'loss', 'train loss')
+                     'train FeatureRegressionLoss')
+        if isinstance(loss, torch.Tensor):
+            viz.linePlot(iterId, loss.data.item(), 'loss', 'train loss')
         viz.linePlot(iterId, runningLoss, 'loss', 'running train loss')
 
     # Evaluate every epoch
