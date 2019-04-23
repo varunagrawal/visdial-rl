@@ -42,11 +42,14 @@ class Questioner(Agent):
         # Share word embedding parameters between encoder and decoder
         self.decoder.wordEmbed = self.encoder.wordEmbed
 
+        #TODO needs to change to decider
         # Setup feature regressor
         if self.imgFeatureSize:
             self.featureNet = nn.Linear(self.rnnHiddenSize,
                                         self.imgFeatureSize)
             self.featureNetInputDropout = nn.Dropout(0.5)
+
+        #TODO need to add question answering module
 
         # Initialize weights
         utils.initializeWeights(self.encoder)
