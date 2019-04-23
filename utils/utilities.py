@@ -154,6 +154,7 @@ def loadModel(params, agent='abot', overwrite=False):
     # NOTE: model.parameters() should be used here, otherwise immediate
     # child modules in model will not have gradient clamping
 
+    print(list(model.modules()))
     # copy parameters if specified
     if mdict:
         model.load_state_dict(mdict['model'])

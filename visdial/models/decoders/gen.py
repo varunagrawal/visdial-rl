@@ -158,9 +158,9 @@ class Decoder(nn.Module):
             sample = sample + 1  # Incrementing all token indices by 1
 
             self.samples.append(sample)
-            seq.data[:, t + 1] = sample.data
+            seq.data[:, t + 1] = sample.squeeze().data
             # Marking spots where <END> token is generated
-            mask[:, t] = sample.data.eq(END_TOKEN_IDX)
+            mask[:, t] = sample.squeeze().data.eq(END_TOKEN_IDX)
 
             # Compensating for shift in <END> token index
             sample.data.masked_fill_(mask[:, t].unsqueeze(1), self.endToken)
