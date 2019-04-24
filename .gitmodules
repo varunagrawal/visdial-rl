@@ -1,0 +1,3 @@
+[submodule "vqa"]
+	path = vqa
+	url = git@github.com:varunagrawal/VisualQA.git
