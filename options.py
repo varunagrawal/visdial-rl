@@ -78,9 +78,6 @@ def readCommandLine(argv=None):
 
     #-------------------------------------------------------------------------
     # Optimization / training params
-    parser.add_argument('-trainMode', default='sl-abot',
-                            help='What should train.py do?',
-                            choices=['sl-abot', 'sl-qbot', 'rl-full-QAf'])
     parser.add_argument('-numRounds', default=10, type=int,
                             help='Number of rounds of dialog (max 10)')
     parser.add_argument('-batchSize', default=20, type=int,

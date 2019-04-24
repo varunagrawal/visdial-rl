@@ -50,26 +50,16 @@ parameters = []
 aBot = None
 qBot = None
 
-# Loading A-Bot
-if params['trainMode'] in ['sl-abot', 'rl-full-QAf']:
-    aBot, loadedParams, optim_state = utils.loadModel(params, 'abot')
-    for key in loadedParams:
-        params[key] = loadedParams[key]
-    parameters.extend(aBot.parameters())
-
 # Loading Q-Bot
-if params['trainMode'] in ['sl-qbot', 'rl-full-QAf']:
-    qBot, loadedParams, optim_state = utils.loadModel(params, 'qbot')
-    for key in loadedParams:
-        params[key] = loadedParams[key]
+qBot, loadedParams, optim_state = utils.loadModel(params, 'qbot')
+for key in loadedParams:
+    params[key] = loadedParams[key]
 
-    if params['trainMode'] == 'rl-full-QAf' and params['freezeQFeatNet']:
-        qBot.freezeFeatNet()
-    # Filtering parameters which require a gradient update
-    parameters.extend(filter(lambda p: p.requires_grad, qBot.parameters()))
-    # parameters.extend(qBot.parameters())
+# Filtering parameters which require a gradient update
+parameters.extend(filter(lambda p: p.requires_grad, qBot.parameters()))
 
 # Setup pytorch dataloader
+# TODO Replace with VarunLoader
 dataset.split = 'train'
 dataloader = DataLoader(
     dataset,
@@ -167,20 +157,15 @@ for epochId, idx, batch in batch_iter(dataloader):
     numRounds = params['numRounds']
     # numRounds = 1 # Override for debugging lesser rounds of dialog
 
-    # Setting training modes for both bots and observing captions, images where needed
-    if aBot:
-        aBot.train(), aBot.reset()
-        aBot.observe(-1, image=image, caption=caption, captionLens=captionLens)
+    # Setting training mode and observing captions, images where needed
     if qBot:
         qBot.train(), qBot.reset()
         qBot.observe(-1, caption=caption, captionLens=captionLens)
 
-    # Q-Bot image feature regression ('guessing') only occurs if Q-Bot is present
-    if params['trainMode'] in ['sl-qbot', 'rl-full-QAf']:
-        initialGuess = qBot.predictImage()
-        prevFeatDist = mse_criterion(initialGuess, image)
-        featLoss += torch.mean(prevFeatDist)
-        prevFeatDist = torch.mean(prevFeatDist,1)
+    initialGuess = qBot.predictImage()
+    prevFeatDist = mse_criterion(initialGuess, image)
+    featLoss += torch.mean(prevFeatDist)
+    prevFeatDist = torch.mean(prevFeatDist,1)
 
     # Iterating over dialog rounds
     for round in range(numRounds):
@@ -188,58 +173,19 @@ for epochId, idx, batch in batch_iter(dataloader):
         Loop over rounds of dialog. Currently three modes of training are
         supported:
 
-            sl-abot :
-                Supervised pre-training of A-Bot model using cross
-                entropy loss with ground truth answers
-
             sl-qbot :
                 Supervised pre-training of Q-Bot model using cross
                 entropy loss with ground truth questions for the
                 dialog model and mean squared error loss for image
                 feature regression (i.e. image prediction)
-
-            rl-full-QAf :
-                RL-finetuning of A-Bot and Q-Bot in a cooperative
-                setting where the common reward is the difference
-                in mean squared error between the current and
-                previous round of Q-Bot's image prediction.
-
-                Annealing: In order to ease in the RL objective,
-                fine-tuning starts with first N-1 rounds of SL
-                objective and last round of RL objective - the
-                number of RL rounds are increased by 1 after
-                every epoch until only RL objective is used for
-                all rounds of dialog.
-
         '''
         # Tracking components which require a forward pass
-        # A-Bot dialog model
-        forwardABot = (params['trainMode'] == 'sl-abot'
-                       or (params['trainMode'] == 'rl-full-QAf'
-                           and round < rlRound))
         # Q-Bot dialog model
         forwardQBot = (params['trainMode'] == 'sl-qbot'
                        or (params['trainMode'] == 'rl-full-QAf'
                            and round < rlRound))
         # Q-Bot feature regression network
         forwardFeatNet = (forwardQBot or params['trainMode'] == 'rl-full-QAf')
-
-        # Answerer Forward Pass
-        if forwardABot:
-            # Observe Ground Truth (GT) question
-            aBot.observe(
-                round,
-                ques=gtQuestions[:, round],
-                quesLens=gtQuesLens[:, round])
-            # Observe GT answer for teacher forcing
-            aBot.observe(
-                round,
-                ans=gtAnswers[:, round],
-                ansLens=gtAnsLens[:, round])
-            ansLogProbs = aBot.forward()
-            # Cross Entropy (CE) Loss for Ground Truth Answers
-            aBotLoss += utils.maskedNll(ansLogProbs,
-                                        gtAnswers[:, round].contiguous())
 
         # Questioner Forward Pass (dialog model)
         if forwardQBot:
@@ -271,16 +217,6 @@ for epochId, idx, batch in batch_iter(dataloader):
             featDist = torch.mean(featDist)
             featLoss += featDist
 
-        # A-Bot and Q-Bot interacting in RL rounds
-        if params['trainMode'] == 'rl-full-QAf' and round >= rlRound:
-            # Run one round of conversation
-            questions, quesLens = qBot.forwardDecode(inference='sample')
-            qBot.observe(round, ques=questions, quesLens=quesLens)
-            aBot.observe(round, ques=questions, quesLens=quesLens)
-            answers, ansLens = aBot.forwardDecode(inference='sample')
-            aBot.observe(round, ans=answers, ansLens=ansLens)
-            qBot.observe(round, ans=answers, ansLens=ansLens)
-
             # Q-Bot makes a guess at the end of each round
             predFeatures = qBot.predictImage()
 
@@ -288,26 +224,13 @@ for epochId, idx, batch in batch_iter(dataloader):
             featDist = mse_criterion(predFeatures, image)
             featDist = torch.mean(featDist,1)
 
-            reward = prevFeatDist.detach() - featDist
-            prevFeatDist = featDist
-
-            qBotRLLoss = qBot.reinforce(reward)
-            if params['rlAbotReward']:
-                aBotRLLoss = aBot.reinforce(reward)
-            rlLoss += torch.mean(aBotRLLoss)
-            rlLoss += torch.mean(qBotRLLoss)
-
     # Loss coefficients
-    rlCoeff = 1
-    rlLoss = rlLoss * rlCoeff
     featLoss = featLoss * params['featLossCoeff']
     # Averaging over rounds
     qBotLoss = (params['CELossCoeff'] * qBotLoss) / numRounds
-    aBotLoss = (params['CELossCoeff'] * aBotLoss) / numRounds
     featLoss = featLoss / numRounds  #/ (numRounds+1)
-    rlLoss = rlLoss / numRounds
     # Total loss
-    loss = qBotLoss + aBotLoss + rlLoss + featLoss
+    loss = qBotLoss + featLoss
     loss.backward()
     optimizer.step()
 
@@ -325,12 +248,6 @@ for epochId, idx, batch in batch_iter(dataloader):
         if iterId % 10 == 0:  # Plot learning rate till saturation
             viz.linePlot(iterId, lRate, 'learning rate', 'learning rate')
 
-    # RL Annealing: Every epoch after the first, decrease rlRound
-    if iterId % numIterPerEpoch == 0 and iterId > 0:
-        if params['trainMode'] == 'rl-full-QAf':
-            rlRound = max(0, rlRound - 1)
-            print('Using rl starting at round {}'.format(rlRound))
-
     # Print every now and then
     if iterId % 10 == 0:
         end_t = timer()  # Keeping track of iteration(s) time
@@ -345,12 +262,8 @@ for epochId, idx, batch in batch_iter(dataloader):
         print(printFormat % tuple(printInfo))
 
         # Update line plots
-        if isinstance(aBotLoss, torch.Tensor):
-            viz.linePlot(iterId, aBotLoss.data.item(), 'aBotLoss', 'train CE')
         if isinstance(qBotLoss, torch.Tensor):
             viz.linePlot(iterId, qBotLoss.data.item(), 'qBotLoss', 'train CE')
-        if isinstance(rlLoss, torch.Tensor):
-            viz.linePlot(iterId, rlLoss.data.item(), 'rlLoss', 'train')
         if isinstance(featLoss, torch.Tensor):
             viz.linePlot(iterId, featLoss.data.item(), 'featLoss',
                      'train FeatureRegressionLoss')
@@ -365,8 +278,6 @@ for epochId, idx, batch in batch_iter(dataloader):
         epochId = (1.0 * iterId / numIterPerEpoch) + 1
 
         # Set eval mode
-        if aBot:
-            aBot.eval()
         if qBot:
             qBot.eval()
 
@@ -378,29 +289,6 @@ for epochId, idx, batch in batch_iter(dataloader):
         viz.linePlot(iterId, epochId, 'iter x epoch', 'epochs')
 
         print('Performing validation...')
-        if aBot and 'ques' in batch:
-            print("aBot Validation:")
-
-            # NOTE: A-Bot validation is slow, so adjust exampleLimit as needed
-            rankMetrics = rankABot(
-                aBot,
-                dataset,
-                'val',
-                scoringFunction=utils.maskedNll,
-                exampleLimit=25 * params['batchSize'])
-
-            for metric, value in rankMetrics.items():
-                viz.linePlot(
-                    epochId, value, 'val - aBot', metric, xlabel='Epochs')
-
-            if 'logProbsMean' in rankMetrics:
-                logProbsMean = params['CELossCoeff'] * rankMetrics[
-                    'logProbsMean']
-                viz.linePlot(iterId, logProbsMean, 'aBotLoss', 'val CE')
-
-                if params['trainMode'] == 'sl-abot':
-                    valLoss = logProbsMean
-                    viz.linePlot(iterId, valLoss, 'loss', 'val loss')
 
         if qBot:
             print("qBot Validation:")
@@ -433,11 +321,6 @@ for epochId, idx, batch in batch_iter(dataloader):
         params['ckpt_iterid'] = iterId
         params['ckpt_lRate'] = lRate
 
-        if aBot:
-            saveFile = os.path.join(params['savePath'],
-                                    'abot_ep_%d.vd' % curEpoch)
-            print('Saving model: ' + saveFile)
-            utils.saveModel(aBot, optimizer, saveFile, params)
         if qBot:
             saveFile = os.path.join(params['savePath'],
                                     'qbot_ep_%d.vd' % curEpoch)
