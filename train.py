@@ -5,8 +5,8 @@ import pprint
 import yaml
 import argparse
 from pathlib import Path
-from time import gmtime, strftime
 from timeit import default_timer as timer
+from datetime import timedelta
 
 import torch
 import torch.nn as nn
@@ -84,11 +84,14 @@ def train(config, data_loaders, model, viz):
         optimizer = optim.Adam(**config["train"]["optimizer_params"])
     # Start training
     for epoch in range(config["train"]["num_epochs"]):
+        start_epoch = timer()
         train_loss = train_epoch(data_loaders["train"], criteria, optimizer)
-        print("Epoch {} training loss: {:.4f}".format(train_loss))
         val_loss = eval_epoch(data_loaders["val"], model)
-        print("Validation loss: {:.4f}".format(val_loss))
-        torch.save(model.state_dict(), Path(config["save_dir"], "epoch_{:3d}.pt".format(epoch)))
+        print("[Epoch {:2d}] Training Loss: {:.4f}, Validation Loss: {:.4f}".format(train_loss, val_loss))
+        save_path = Path(config["save_dir"], "epoch_{:3d}.pt".format(epoch))
+        torch.save(model.state_dict(), save_path)
+        stop_epoch = timer()
+        print("Epoch elapsed time: {}, model saved at {}".format(timedelta(round(stop_epoch - start_epoch)), save_path))
         gc.collect()
 
 
