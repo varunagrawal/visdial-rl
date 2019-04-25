@@ -12,12 +12,9 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 
-from vqa.models.deeperlstm import DeeperLSTM
-from visdial.questioner import Questioner
 from utils import utilities as utils
 from utils.visualize import VisdomVisualize
-# Placeholders
-from dataloader import VarunLoader
+from pulp_dataloader import get_dataloader
 
 
 parser = argparse.ArgumentParser(description="Train Discriminative Questioning bot.")
@@ -37,8 +34,43 @@ def create_models(config, checkpoint=None):
     pass
     
 
-def train(config, data_loaders, model, viz):
+def train_epoch(data_loader, model, criteria, optimizer):
+    model.train()
+    total_loss = 0.0
+    samples = len(data_loader)
+
+    for datum in data_loader:
+        loss = 0.0
+        model.reset()
+        model.zero_grad()
+        model.observe(image_1=datum["image_1"])
+        model.observe(image_2=datum["image_2"])
+        for r in range(datum["questions"].size(1)):
+            model.observe(round=r, question=datum["questions"][:, r])
+            q_log_probs, dq_log_prob = model.forward()
+            loss += criteria["question"](q_log_probs, datum["questions"][:, r])
+            loss += criteria["discriminative"](dq_log_prob, datum["discriminant"] == r)
+        total_loss += loss.item()
+        loss.backward()
+        optimizer.step()
+    average_loss = total_loss / samples
+    return average_loss
+
+
+def eval_epoch(data_loader, model, criteria):
     pass
+
+
+def train(config, data_loaders, model, viz):
+    criteria = {"question": nn.CrossEntropyLoss(), "discriminative": nn.BCELoss()}
+    if config["train"]["optimizer"] == "Adam":
+        optimizer = optim.Adam(**config["train"]["optimizer_params"])
+    # Start training
+    for epoch in range(config["train"]["num_epochs"]):
+        train_loss = train_epoch(data_loaders["train"], criteria, optimizer)
+        print("Epoch {} training loss: {:.3f}".format(train_loss))
+        val_loss = eval_epoch(data_loaders["val"], model)
+
 
 if __name__ == "__main__":
     args = parser.parse_args()

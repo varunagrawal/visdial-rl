@@ -88,7 +88,7 @@ class Questioner(Agent):
         decIn = self.questions[-1]
 
         logProbs = self.decoder(encStates, inputSeq=decIn)
-        return logProbs
+        return logProbs, encStates
 
     def forwardDecode(self, inference='sample', beamSize=1, maxSeqLen=20):
         '''

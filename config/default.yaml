@@ -1,0 +1,12 @@
+dataset:
+        - splits: ['train', 'val']
+
+train:
+        - batch_size: 32
+
+questioner:
+        - encoder:
+                - type: hre
+        - decoder:
+                - type: gen
+
