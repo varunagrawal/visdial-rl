@@ -58,7 +58,24 @@ def train_epoch(data_loader, model, criteria, optimizer):
 
 
 def eval_epoch(data_loader, model, criteria):
-    pass
+    model.eval()
+    total_loss = 0.0
+    samples = len(data_loader)
+
+    with torch.no_grad():
+        for datum in data_loader:
+            loss = 0.0
+            model.reset()
+            model.observe(image_1=datum["image_1"])
+            model.observe(image_2=datum["image_2"])
+            for r in range(datum["questions"].size(1)):
+                model.observe(round=r, question=datum["questions"][:, r])
+                q_log_probs, dq_log_prob = model.forward()
+                loss += criteria["question"](q_log_probs, datum["questions"][:, r])
+                loss += criteria["discriminative"](dq_log_prob, datum["discriminant"] == r)
+            total_loss += loss.item()
+    average_loss = total_loss / samples
+    return average_loss
 
 
 def train(config, data_loaders, model, viz):
@@ -68,8 +85,11 @@ def train(config, data_loaders, model, viz):
     # Start training
     for epoch in range(config["train"]["num_epochs"]):
         train_loss = train_epoch(data_loaders["train"], criteria, optimizer)
-        print("Epoch {} training loss: {:.3f}".format(train_loss))
+        print("Epoch {} training loss: {:.4f}".format(train_loss))
         val_loss = eval_epoch(data_loaders["val"], model)
+        print("Validation loss: {:.4f}".format(val_loss))
+        torch.save(model.state_dict(), Path(config["save_dir"], "epoch_{:3d}.pt".format(epoch)))
+        gc.collect()
 
 
 if __name__ == "__main__":
@@ -92,3 +112,4 @@ if __name__ == "__main__":
     models = create_models(config, checkpoint)
 
     train(config, data_loaders, models, viz)
+    print("Training complete!")
