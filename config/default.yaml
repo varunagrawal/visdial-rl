@@ -1,12 +1,13 @@
 dataset:
-        - splits: ['train', 'val']
+        train_batch_size: 32
+        eval_batch_size: 32
 
 train:
-        - batch_size: 32
 
 questioner:
-        - encoder:
-                - type: hre
-        - decoder:
-                - type: gen
+        encoder:
+                type: hre
+                dropout: 0.5
+        decoder:
+                type: gen
 

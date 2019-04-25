@@ -5,9 +5,13 @@ from visdial.models.questioner import Questioner
 from vqa.models.deeperlstm import DeeperLSTM
 
 class PulpModel(nn.Module):
-    def __init__(self, config):
-        self.questioner = Questioner(**config["questioner"])
+    def __init__(self, config, maps, image_feature_size):
+        self.questioner = Questioner(config["questioner"]["encoder"],
+                config["questioner"]["decoder"],
+                image_feature_size)
         self.answerer = DeeperLSTM(**config["answerer"])
+        self.maps = maps
+        self.aid_to_ans = maps["aid_to_ans"]
 
         self.questions = dict()
         self.image_1 = None
@@ -33,8 +37,10 @@ class PulpModel(nn.Module):
     def forward(self):
         q_log_probs, enc_state = self.questioner.forward()
         questions, ques_lens = self.questioner.forwardDecode()
-        answers_1 = self.answerer(self.image_1, questions, ques_lens)
-        answers_2 = self.answerer(self.image_2, questions, ques_lens)
+        answers_1_logits = self.answerer(self.image_1, questions, ques_lens)
+        answers_2_logits = self.answerer(self.image_2, questions, ques_lens)
+        answers_1 = self.aid_to_ans(torch.argmax(answers_1_logits, dim=2))
+        answers_2 = self.aid_to_ans(torch.argmax(answers_2_logits, dim=2))
 
         dq_log_prob = self.discriminator(enc_state[0][-1], answers_1, answers_2)
         return q_log_probs, dq_log_prob
