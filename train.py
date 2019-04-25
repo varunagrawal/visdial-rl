@@ -33,11 +33,11 @@ def create_data_loaders(config):
             Path(args.data, "v2_mscoco_train2014_complementary_pairs.json"),
             split="train",
             batch_size=config["train_batch_size"])
-    maps={"word_to_wid": data_loaders["train"].dataset.word_to_wid,
+    maps= {"word_to_wid": data_loaders["train"].dataset.word_to_wid,
             "wid_to_word": data_loaders["train"].dataset.wid_to_word,
             "ans_to_aid": data_loaders["train"].dataset.ans_to_aid,
             "aid_to_ans": data_loaders["train"].dataset.aid_to_ans,
-            "vocab": data_loaders["train"].dataset.vocab},
+            "vocab": data_loaders["train"].dataset.vocab}
     data_loaders["val"] = get_dataloader(
             Path(args.data, "coco_train_resnet152_pool5.pth"),
             Path(args.data, "v2_mscoco_val2014_annotations.json"),
@@ -54,6 +54,7 @@ def create_model(config, img_feat_size, maps, device, checkpoint=None):
     model.to(device)
     if checkpoint is not None:
         model.load_state_dict(checkpoint)
+    return model
     
 
 def train_epoch(data_loader, model, criteria, optimizer, device):
@@ -107,7 +108,11 @@ def eval_epoch(data_loader, model, criteria, device):
 def train(config, data_loaders, model, device):
     criteria = {"question": nn.CrossEntropyLoss(), "discriminative": nn.BCELoss()}
     if config["train"]["optimizer"] == "Adam":
-        optimizer = optim.Adam(**config["train"]["optimizer_params"])
+        opt = optim.Adam
+    if "optimizer_params" in config["train"]:
+        optimizer = opt(model.parameters(), **config["train"]["optimizer_params"])
+    else:
+        optimizer = opt(model.parameters())
     # Start training
     for epoch in range(config["train"]["num_epochs"]):
         start_epoch = timer()
@@ -132,15 +137,16 @@ if __name__ == "__main__":
     else:
         checkpoint = None
 
-    data_loaders, maps = create_data_loaders(config["dataset"])
-    img_feature_size = data_loaders["train"].dataset[0]["image_1"].size(1)
-    model = create_model(config, img_feature_size, maps, checkpoint)
-
     if len(args.gpus) > 1:
         device = "cuda"
         model = nn.DataParallel(model, device_ids=args.gpus)
     else:
         device = "cpu"
+
+    data_loaders, maps = create_data_loaders(config["dataset"])
+    img_feature_size = data_loaders["train"].dataset[0]["image_1"].size(1)
+    config["answerer"]["image_dim"] = img_feature_size
+    model = create_model(config, img_feature_size, maps, device, checkpoint)
 
     train(config, data_loaders, model, device)
     print("Training complete!")

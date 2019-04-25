@@ -6,6 +6,14 @@ from vqa.models.deeperlstm import DeeperLSTM
 
 class PulpModel(nn.Module):
     def __init__(self, config, maps, image_feature_size):
+        super(PulpModel, self).__init__()
+        config["questioner"]["decoder"]["startToken"] = maps["word_to_wid"]["<START>"]
+        config["questioner"]["decoder"]["endToken"] = maps["word_to_wid"]["<END>"]
+        config["questioner"]["decoder"]["vocabSize"] = len(maps["word_to_wid"]) + 1
+        config["questioner"]["encoder"]["vocabSize"] = len(maps["word_to_wid"]) + 1
+        config["questioner"]["encoder"]["imgFeatureSize"] = image_feature_size
+        config["answerer"]["vocab_size"] = len(maps["word_to_wid"]) + 1
+        config["answerer"]["output_dim"] = len(maps["aid_to_ans"])
         self.questioner = Questioner(config["questioner"]["encoder"],
                 config["questioner"]["decoder"],
                 image_feature_size)
