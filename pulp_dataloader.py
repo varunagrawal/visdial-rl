@@ -10,6 +10,7 @@ import torch
 import torch.utils.data as data
 from sklearn.preprocessing import normalize
 from torch.utils.data import Dataset
+from tqdm import tqdm
 
 from utils import text
 from utils.image import coco_name_format
@@ -48,8 +49,15 @@ class PulpDataset(Dataset):
             self.pairs[q1] = q2
             self.pairs[q2] = q1
 
-        self.questions = json.load(open(questions_file)).get("questions")
-        self.annotations = json.load(open(annotations_file)).get("annotations")
+        questions = json.load(open(questions_file)).get("questions")
+        annotations = json.load(open(annotations_file)).get("annotations")
+
+        self.prepare_dataset(annotations, questions, split, maps)
+
+        # self.prepare_dataset filters out some questions so we only use the questions we have
+        all_question_ids = [d['question_id'] for d in tqdm(self.data)]
+        self.questions = [q for q in tqdm(questions) if q['question_id'] in all_question_ids]
+        self.annotations = [a for a in tqdm(annotations) if a['question_id'] in all_question_ids]
 
         self.ques_map = {q['question_id']: q for q in self.questions}
         # self.ann_map = {a['question_id']: a for a in self.annotations}
@@ -61,10 +69,8 @@ class PulpDataset(Dataset):
 
         self.num_rounds = num_rounds
 
-        self.prepare_dataset(self.annotations, self.questions, split, maps)
-
-        self.question_index = {q['question_id']
-            : idx for idx, q in enumerate(self.data)}
+        self.question_index = {
+            q['question_id']: idx for idx, q in enumerate(self.data)}
 
     def prepare_dataset(self, annotations, questions, split="train", maps=None):
         self.data, self.vocab, \
@@ -144,15 +150,13 @@ class PulpDataset(Dataset):
             index = self.question_index[q]
             questions.append(torch.from_numpy(
                 self.data[index]['question_wids'].astype(np.int64)))
-            #answers_1.append(torch.from_numpy(self.data[index]['answer_id']))
-
-        #for q in ques_2_ids:
-        #    answers_2.append(torch.from_numpy(self.data[index]['answer_id']))
+            answers_1.append(self.data[index]['answer_id'])
+        for q in ques_2_ids:
+            answers_2.append(self.data[index]['answer_id'])
 
         questions = torch.cat(questions).unsqueeze(0)
-        answers_1 = torch.tensor([1])#torch.cat(answers_1).unsqueeze(0)
-
-        answers_2 = torch.tensor([1])#torch.cat(answers_2).unsqueeze(0)
+        answers_1 = torch.LongTensor(answers_1).unsqueeze(0)
+        answers_2 = torch.LongTensor(answers_2).unsqueeze(0)
 
         d = {
             "image_1": self.images[image_1],
@@ -301,5 +305,5 @@ if __name__ == "__main__":
                                     "~/datasets/VQA2/v2_mscoco_train2014_complementary_pairs.json"),
                                 split='train')
 
-    for d in vqa_loader:
-        print(d)
+    for d in tqdm(vqa_loader, total=len(vqa_loader)):
+        pass
