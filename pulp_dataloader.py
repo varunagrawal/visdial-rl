@@ -144,14 +144,15 @@ class PulpDataset(Dataset):
             index = self.question_index[q]
             questions.append(torch.from_numpy(
                 self.data[index]['question_wids'].astype(np.int64)))
-            answers_1.append(torch.from_numpy(self.data[index]['answer_id']))
-        for q in ques_2_ids:
-            answers_2.append(torch.from_numpy(self.data[index]['answer_id']))
+            #answers_1.append(torch.from_numpy(self.data[index]['answer_id']))
+
+        #for q in ques_2_ids:
+        #    answers_2.append(torch.from_numpy(self.data[index]['answer_id']))
 
         questions = torch.cat(questions).unsqueeze(0)
-        answers_1 = torch.cat(answers_1).unsqueeze(0)
+        answers_1 = torch.tensor([1])#torch.cat(answers_1).unsqueeze(0)
 
-        answers_2 = torch.cat(answers_2).unsqueeze(0)
+        answers_2 = torch.tensor([1])#torch.cat(answers_2).unsqueeze(0)
 
         d = {
             "image_1": self.images[image_1],
