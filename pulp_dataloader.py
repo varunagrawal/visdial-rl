@@ -4,12 +4,13 @@ import os.path as osp
 import pickle
 import random
 from collections import Counter, defaultdict
+from copy import deepcopy
 
 import numpy as np
 import torch
 import torch.utils.data as data
-from sklearn.preprocessing import normalize
 from torch.utils.data import Dataset
+from tqdm import tqdm
 
 from utils import text
 from utils.image import coco_name_format
@@ -40,31 +41,43 @@ class PulpDataset(Dataset):
         self.images = torch.load(images_dataset)
 
         self.split = split
-
-        pairs = json.load(open(pairs_file))
-        # this is an index to help get pairs quickly
-        self.pairs = {}
-        for q1, q2 in pairs:
-            self.pairs[q1] = q2
-            self.pairs[q2] = q1
-
-        self.questions = json.load(open(questions_file)).get("questions")
-        self.annotations = json.load(open(annotations_file)).get("annotations")
-
-        self.ques_map = {q['question_id']: q for q in self.questions}
-        # self.ann_map = {a['question_id']: a for a in self.annotations}
-
-        self.im2ques_id = defaultdict(list)
-        for k, v in self.ques_map.items():
-            image_id = v['image_id']
-            self.im2ques_id[image_id].append(k)
-
         self.num_rounds = num_rounds
 
-        self.prepare_dataset(self.annotations, self.questions, split, maps)
+        questions = json.load(open(questions_file)).get("questions")
+        annotations = json.load(open(annotations_file)).get("annotations")
 
-        self.question_index = {q['question_id']
-            : idx for idx, q in enumerate(self.data)}
+        self.prepare_dataset(annotations, questions, split, maps)
+
+        # the above filters out some questions so we only use the questions we have
+        valid_questions = {q['question_id']: q for q in tqdm(self.data)}
+
+        # this is an index to help get pairs quickly
+        self.pairs = {}
+        pairs = json.load(open(pairs_file))
+        print("Filtering pairs")
+        for q1, q2 in tqdm(pairs):
+            # only add pairs that are in the dataset
+            if q1 in valid_questions and q2 in valid_questions:
+                self.pairs[q1] = q2
+                self.pairs[q2] = q1
+
+        # remove data points in self.data that don't have pairs
+        self.data = [d for d in self.data if d['question_id'] in self.pairs]
+
+        # self.ann_map = {a['question_id']: a for a in self.annotations}
+
+        # generate the ques_map from the reduced dataset again
+        self.ques_map = {q['question_id']: q for q in tqdm(self.data)}
+
+        self.im2ques_id = defaultdict(list)
+        for q in self.ques_map.values():
+            image_id = q['image_id']
+            q_id = q['question_id']
+            self.im2ques_id[image_id].append(q_id)
+
+        self.question_index = {
+            q['question_id']: idx
+            for idx, q in enumerate(self.data)}
 
     def prepare_dataset(self, annotations, questions, split="train", maps=None):
         self.data, self.vocab, \
@@ -100,7 +113,8 @@ class PulpDataset(Dataset):
         q1 = d['question_id']
 
         # get all the question IDs for this image
-        ques_ids = self.im2ques_id[image_1]
+        ques_ids = deepcopy(self.im2ques_id[image_1])
+
         # # remove q1 from ques_ids since we want to sample from the other questions
         # ques_ids.pop(ques_ids.index(q1))
 
@@ -108,17 +122,38 @@ class PulpDataset(Dataset):
         q2 = self.pairs[q1]
         image_2 = self.ques_map[q2]['image_id']
 
-        # we want at least 5 questions per round, so we sample from the complementary image if we don't
+        # we want 5 questions per round, so we sample from the complementary image if we don't
         if len(ques_ids) < self.num_rounds:
             # we want to sample from other questions not part of the current pair
-            ques2_samples = self.im2ques_id[image_2]
+            ques2_samples = deepcopy(self.im2ques_id[image_2])
             ques2_samples.pop(ques2_samples.index(q2))
-            samples = np.random.randint(0, len(ques2_samples),
-                                        size=self.num_rounds-len(ques_ids))
-            for s in samples:
-                ques_ids.append(ques2_samples[s])
 
-        assert len(ques_ids) == self.num_rounds
+            if len(ques2_samples) > 0:
+                samples = np.random.choice(range(0, len(ques2_samples)),
+                                           size=self.num_rounds-len(ques_ids))
+                for s in samples:
+                    ques_ids.append(ques2_samples[s])
+
+            else:
+                # only remove q1 if we have more questions to sample from
+                if len(ques_ids) > 1:
+                    ques_ids.pop(ques_ids.index(q1))
+                
+                samples = np.random.choice(range(0, len(ques_ids)), size=self.num_rounds-1).tolist()
+                ques_ids = [ques_ids[s] for s in samples]
+                ques_ids.append(q1)
+
+        elif len(ques_ids) > self.num_rounds:
+            idx = ques_ids.index(q1)
+            samples = np.random.choice(range(0, len(ques_ids)),
+                                       size=self.num_rounds, replace=False).tolist()
+            if idx not in samples:
+                samples[0] = idx
+
+            ques_ids = [ques_ids[s] for s in samples]
+
+        # assert len(ques_ids) == self.num_rounds, print(len(ques_ids), index)
+        # print(index, image_1, q1, ques_ids)
 
         # Randomize the order of the questions
         random.shuffle(ques_ids)
@@ -141,22 +176,23 @@ class PulpDataset(Dataset):
         questions, answers_1, answers_2 = [], [], []
         # Get the question token, answer token tensors for each of the questions and concatenate them
         for q in ques_ids:
-            index = self.question_index[q]
+            idx = self.question_index[q]
             questions.append(torch.from_numpy(
-                self.data[index]['question_wids'].astype(np.int64)))
-            #answers_1.append(torch.from_numpy(self.data[index]['answer_id']))
-
-        #for q in ques_2_ids:
-        #    answers_2.append(torch.from_numpy(self.data[index]['answer_id']))
+                self.data[idx]['question_wids'].astype(np.int64)))
+            answers_1.append(self.data[idx]['answer_id'])
+        for q in ques_2_ids:
+            answers_2.append(self.data[idx]['answer_id'])
 
         questions = torch.cat(questions).unsqueeze(0)
-        answers_1 = torch.tensor([1])#torch.cat(answers_1).unsqueeze(0)
+        answers_1 = torch.LongTensor(answers_1).unsqueeze(0)
+        answers_2 = torch.LongTensor(answers_2).unsqueeze(0)
 
-        answers_2 = torch.tensor([1])#torch.cat(answers_2).unsqueeze(0)
+        img_feat_1 = self.normalize_feature(self.images[image_1])
+        img_feat_2 = self.normalize_feature(self.images[image_2])
 
         d = {
-            "image_1": self.images[image_1],
-            "image_2": self.images[image_2],
+            "image_1": img_feat_1,
+            "image_2": img_feat_2,
             "questions": questions,
             "answers_1": answers_1,
             "answers_2": answers_2,
@@ -165,6 +201,12 @@ class PulpDataset(Dataset):
         }
 
         return d
+
+    def normalize_feature(self, img_feat):
+        # normalize the image and embed it to the common dimension.
+        norm = img_feat.norm(p=2, dim=1, keepdim=True).expand_as(img_feat)
+        img_feat_norm = img_feat / norm.detach()
+        return img_feat_norm
 
     def process_sequence(self):
         """
@@ -235,6 +277,7 @@ def process_vqa_dataset(questions, annotations, split, maps=None,
         dataset = []
         for idx, q in enumerate(questions):
             d = dict()
+            # question_id is unique
             d["question_id"] = q["question_id"]
             d["question"] = q["question"]
             d["image_id"] = q["image_id"]
@@ -292,7 +335,7 @@ def process_vqa_dataset(questions, annotations, split, maps=None,
 
 
 if __name__ == "__main__":
-    vqa_loader = get_dataloader("image_embeddings/coco_val_vgg19_bn_fc7.pth",
+    vqa_loader = get_dataloader("image_embeddings/coco_train_vgg19_bn_fc7.pth",
                                 osp.expanduser(
                                     "~/datasets/VQA2/v2_mscoco_train2014_annotations.json"),
                                 osp.expanduser(
@@ -301,5 +344,10 @@ if __name__ == "__main__":
                                     "~/datasets/VQA2/v2_mscoco_train2014_complementary_pairs.json"),
                                 split='train')
 
-    for d in vqa_loader:
-        print(d)
+    print(len(vqa_loader))
+    cnt = 0
+    for d in tqdm(vqa_loader, total=len(vqa_loader)):
+        cnt += 1
+
+    print(cnt)
+    print("done")
