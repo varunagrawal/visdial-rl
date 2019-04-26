@@ -63,18 +63,21 @@ def train_epoch(data_loader, model, criteria, optimizer, device):
     samples = len(data_loader)
 
     for datum in data_loader:
-        for key, value in datum.iteritems():
+        for key, value in datum.items():
             value.to(device)
         loss = 0.0
         model.reset()
         model.zero_grad()
         model.observe(image_1=datum["image_1"])
         model.observe(image_2=datum["image_2"])
-        for r in range(datum["questions"].size(1)):
-            model.observe(round=r, question=datum["questions"][:, r])
+        q_log_probs, dq_log_prob = model.forward()
+        loss += criteria["question"](q_log_probs, datum["questions"][:, 0])
+        loss += criteria["discriminative"](dq_log_prob, datum["discriminant"] == 0)
+        for r in range(datum["questions"].size(1)-1):
+            model.observe(round=r, question=datum["questions"][:, r], question_lengths=datum["questions_lengths"])
             q_log_probs, dq_log_prob = model.forward()
-            loss += criteria["question"](q_log_probs, datum["questions"][:, r])
-            loss += criteria["discriminative"](dq_log_prob, datum["discriminant"] == r)
+            loss += criteria["question"](q_log_probs, datum["questions"][:, r+1])
+            loss += criteria["discriminative"](dq_log_prob, datum["discriminant"] == r+1)
         total_loss += loss.item()
         loss.backward()
         optimizer.step()
@@ -95,11 +98,14 @@ def eval_epoch(data_loader, model, criteria, device):
             model.reset()
             model.observe(image_1=datum["image_1"])
             model.observe(image_2=datum["image_2"])
-            for r in range(datum["questions"].size(1)):
-                model.observe(round=r, question=datum["questions"][:, r])
+            q_log_probs, dq_log_prob = model.forward()
+            loss += criteria["question"](q_log_probs, datum["questions"][:, 0])
+            loss += criteria["discriminative"](dq_log_prob, datum["discriminant"] == 0)
+            for r in range(datum["questions"].size(1)-1):
+                model.observe(round=r, question=datum["questions"][:, r], question_lengths=datum["questions_lengths"])
                 q_log_probs, dq_log_prob = model.forward()
-                loss += criteria["question"](q_log_probs, datum["questions"][:, r])
-                loss += criteria["discriminative"](dq_log_prob, datum["discriminant"] == r)
+                loss += criteria["question"](q_log_probs, datum["questions"][:, r+1])
+                loss += criteria["discriminative"](dq_log_prob, datum["discriminant"] == r+1)
             total_loss += loss.item()
     average_loss = total_loss / samples
     return average_loss
@@ -116,7 +122,7 @@ def train(config, data_loaders, model, device):
     # Start training
     for epoch in range(config["train"]["num_epochs"]):
         start_epoch = timer()
-        train_loss = train_epoch(data_loaders["train"], criteria, optimizer, device)
+        train_loss = train_epoch(data_loaders["train"], model, criteria, optimizer, device)
         val_loss = eval_epoch(data_loaders["val"], model, criteria, device)
         print("[Epoch {:2d}] Training Loss: {:.4f}, Validation Loss: {:.4f}".format(train_loss, val_loss))
         save_path = Path(config["save_dir"], "epoch_{:3d}.pt".format(epoch))
@@ -145,6 +151,7 @@ if __name__ == "__main__":
 
     data_loaders, maps = create_data_loaders(config["dataset"])
     img_feature_size = data_loaders["train"].dataset[0]["image_1"].size(1)
+    print(img_feature_size)
     config["answerer"]["image_dim"] = img_feature_size
     model = create_model(config, img_feature_size, maps, device, checkpoint)
 

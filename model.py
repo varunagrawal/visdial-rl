@@ -31,7 +31,7 @@ class PulpModel(nn.Module):
         self.image_2 = None
         self.questioner.reset()
 
-    def observe(self, round=-1, question=None, image_1=None, image_2=None):
+    def observe(self, round=-1, question=None, question_lengths=None, image_1=None, image_2=None):
         if isinstance(image_1, torch.Tensor):
             self.image_1 = image_1
             self.questioner.observe(round, image=image_1)
@@ -40,7 +40,7 @@ class PulpModel(nn.Module):
             self.image_2 = image_2
 
         if isinstance(question, torch.Tensor):
-            self.questioner.observe(round, question)
+            self.questioner.observe(round, ques=question, quesLens=question_lengths)
 
     def forward(self):
         q_log_probs, enc_state = self.questioner.forward()
@@ -52,4 +52,3 @@ class PulpModel(nn.Module):
 
         dq_log_prob = self.discriminator(enc_state[0][-1], answers_1, answers_2)
         return q_log_probs, dq_log_prob
-

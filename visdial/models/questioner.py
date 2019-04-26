@@ -69,7 +69,6 @@ class Questioner(Agent):
         Update Q-Bot percepts. See self.encoder.observe() in the corresponding
         encoder class definition (hre).
         '''
-        assert 'image' not in kwargs, "Q-Bot does not see image"
         if ques is not None:
             assert round == len(self.questions), \
                 "Round number does not match number of questions observed"
