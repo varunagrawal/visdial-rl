@@ -173,17 +173,19 @@ class PulpDataset(Dataset):
             # Replace with the pair to get the appropriate answer
             ques_2_ids[ques_ids.index(q1)] = q2
 
-        questions, answers_1, answers_2 = [], [], []
+        questions, ques_lens, answers_1, answers_2 = [], [], [], []
         # Get the question token, answer token tensors for each of the questions and concatenate them
         for q in ques_ids:
             idx = self.question_index[q]
             questions.append(torch.from_numpy(
                 self.data[idx]['question_wids'].astype(np.int64)))
+            ques_lens.append(torch.LongTensor(self.data[idx]['question_length']))
             answers_1.append(self.data[idx]['answer_id'])
         for q in ques_2_ids:
             answers_2.append(self.data[idx]['answer_id'])
 
         questions = torch.cat(questions).unsqueeze(0)
+        question_lens = torch.cat(ques_lens).unsqueeze(0)
         answers_1 = torch.LongTensor(answers_1).unsqueeze(0)
         answers_2 = torch.LongTensor(answers_2).unsqueeze(0)
 
@@ -194,6 +196,7 @@ class PulpDataset(Dataset):
             "image_1": img_feat_1,
             "image_2": img_feat_2,
             "questions": questions,
+            "questions_lengths": question_lens,
             "answers_1": answers_1,
             "answers_2": answers_2,
             "discriminant": discriminant,
