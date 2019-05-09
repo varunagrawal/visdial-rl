@@ -18,3 +18,8 @@ dialog_output/results
 # virtualenv
 venv/
 ENV/
+
+# data
+data/*.pth
+data/*.json
+*.pickle
