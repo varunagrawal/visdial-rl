@@ -15,7 +15,7 @@ import torch.optim as optim
 from utils import utilities as utils
 from utils.visualize import VisdomVisualize
 from pulp_dataloader import get_dataloader
-from model import PulpModel
+from visdial.models.qaabot import QAABot
 
 
 parser = argparse.ArgumentParser(description="Train Discriminative Questioning bot.")
@@ -59,7 +59,7 @@ def create_data_loaders(config):
 
 
 def create_model(config, img_feat_size, maps, device, checkpoint=None):
-    model = PulpModel(config, maps, img_feat_size)
+    model = NotImplemented
     model.to(device)
     if checkpoint is not None:
         model.load_state_dict(checkpoint)
@@ -77,17 +77,16 @@ def train_epoch(data_loader, model, criteria, optimizer, device):
         loss = 0.0
         model.reset()
         model.zero_grad()
-        model.observe(image_1=datum["image_1"])
-        model.observe(image_2=datum["image_2"])
+        model.observe(image=datum["image_1"])
+        model.observe(image2=datum["image_2"])
+        # New inference
         q_log_probs, dq_log_prob = model.forward()
         loss += criteria["question"](q_log_probs, datum["questions"][:, 0])
         loss += criteria["discriminative"](dq_log_prob, datum["discriminant"] == 0)
         for r in range(datum["questions"].size(1) - 1):
-            model.observe(
-                round=r,
-                question=datum["questions"][:, r],
-                question_lengths=datum["questions_lengths"],
-            )
+            ques = datum["questions"][:, r]
+            ques_len = datum["questions_lengths"][r]
+            model.observe(round=r, ques=ques, quesLen=ques_len)
             q_log_probs, dq_log_prob = model.forward()
             loss += criteria["question"](q_log_probs, datum["questions"][:, r + 1])
             loss += criteria["discriminative"](
@@ -113,6 +112,7 @@ def eval_epoch(data_loader, model, criteria, device):
             model.reset()
             model.observe(image_1=datum["image_1"])
             model.observe(image_2=datum["image_2"])
+            # TODO New inference
             q_log_probs, dq_log_prob = model.forward()
             loss += criteria["question"](q_log_probs, datum["questions"][:, 0])
             loss += criteria["discriminative"](dq_log_prob, datum["discriminant"] == 0)

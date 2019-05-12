@@ -46,27 +46,23 @@ class Encoder(nn.Module):
         # image fuses early with words
         if self.useIm == "early":
             quesInputSize = self.embedSize + self.imgEmbedSize
-            dialogInputSize = 2 * self.rnnHiddenSize
+            dialogInputSize = 3 * self.rnnHiddenSize
             self.imgNet = nn.Linear(self.imgFeatureSize, self.imgEmbedSize)
             self.imgEmbedDropout = nn.Dropout(0.5)
         elif self.useIm == "late":
             quesInputSize = self.embedSize
-            dialogInputSize = 2 * self.rnnHiddenSize + self.imgEmbedSize
+            dialogInputSize = 3 * self.rnnHiddenSize + self.imgEmbedSize
             self.imgNet = nn.Linear(self.imgFeatureSize, self.imgEmbedSize)
             self.imgEmbedDropout = nn.Dropout(0.5)
-        elif self.isAnswerer:
-            quesInputSize = self.embedSize
-            dialogInputSize = 2 * self.rnnHiddenSize
         else:
             dialogInputSize = self.rnnHiddenSize
-        if self.isAnswerer:
-            self.quesRNN = nn.LSTM(
-                quesInputSize,
-                self.rnnHiddenSize,
-                self.numLayers,
-                batch_first=True,
-                dropout=0,
-            )
+        self.quesRNN = nn.LSTM(
+            quesInputSize,
+            self.rnnHiddenSize,
+            self.numLayers,
+            batch_first=True,
+            dropout=0,
+        )
 
         # history encoder
         self.factRNN = nn.LSTM(
@@ -76,6 +72,10 @@ class Encoder(nn.Module):
             batch_first=True,
             dropout=0,
         )
+
+        # im2fact
+        self.im2hids = nn.Linear(self.imgEmbedSize, self.rnnHiddenSize)
+        self.im2states = nn.Linear(self.imgEmbedSize, self.rnnHiddenSize)
 
         # dialog rnn
         self.dialogRNN = nn.LSTMCell(dialogInputSize, self.rnnHiddenSize)
@@ -88,10 +88,6 @@ class Encoder(nn.Module):
         self.image = None
         self.imageEmbed = None
 
-        self.captionTokens = None
-        self.captionEmbed = None
-        self.captionLens = None
-
         self.questionTokens = []
         self.questionEmbeds = []
         self.questionLens = []
@@ -99,6 +95,10 @@ class Encoder(nn.Module):
         self.answerTokens = []
         self.answerEmbeds = []
         self.answerLengths = []
+
+        self.answerTokens2 = []
+        self.answerEmbeds2 = []
+        self.answerLengths2 = []
 
         # Hidden embeddings
         self.factEmbeds = []
@@ -119,12 +119,12 @@ class Encoder(nn.Module):
         self,
         round,
         image=None,
-        caption=None,
         ques=None,
         ans=None,
-        captionLens=None,
+        ans2=None,
         quesLens=None,
         ansLens=None,
+        ansLens2=None,
     ):
         """
         Store dialog input to internal model storage
@@ -135,28 +135,40 @@ class Encoder(nn.Module):
         """
         if image is not None:
             assert round == -1
+            assert self.image is None
             self.image = image
             self.imageEmbed = None
             self.batchSize = len(self.image)
-        if caption is not None:
-            assert round == -1
-            assert captionLens is not None, "Caption lengths required!"
-            caption, captionLens = self.processSequence(caption, captionLens)
-            self.captionTokens = caption
-            self.captionLens = captionLens
-            self.batchSize = len(self.captionTokens)
         if ques is not None:
-            assert round == len(self.questionEmbeds)
             assert quesLens is not None, "Questions lengths required!"
             ques, quesLens = self.processSequence(ques, quesLens)
-            self.questionTokens.append(ques)
-            self.questionLens.append(quesLens)
+            if round == len(self.questionEmbeds):
+                self.questionTokens.append(ques)
+                self.questionLens.append(quesLens)
+            elif round < len(self.questionEmbeds):
+                self.questionTokens[round] = ques
+                self.questionLens[round] = quesLens
+                raise NotImplementedError
         if ans is not None:
-            assert round == len(self.answerEmbeds)
             assert ansLens is not None, "Answer lengths required!"
             ans, ansLens = self.processSequence(ans, ansLens)
-            self.answerTokens.append(ans)
-            self.answerLengths.append(ansLens)
+            if round == len(self.answerEmbeds):
+                self.answerTokens.append(ans)
+                self.answerLengths.append(ansLens)
+            elif round < len(self.answerEmbeds):
+                self.answerTokens[round] = ans
+                self.answerLens[round] = ansLens
+                raise NotImplementedError
+        if ans2 is not None:
+            assert ansLens2 is not None, "Answer lengths required!"
+            ans2, ansLens2 = self.processSequence(ans2, ansLens2)
+            if round == len(self.answerEmbeds2):
+                self.answerTokens.append(ans2)
+                self.answerLengths.append(ansLens2)
+            elif round < len(self.answerEmbeds2):
+                self.answerTokens2[round] = ans2
+                self.answerLengths2[round] = ansLens2
+                raise NotImplementedError
 
     def processSequence(self, seq, seqLen):
         """ Strip <START> and <END> token from a left-aligned sequence"""
@@ -171,11 +183,8 @@ class Encoder(nn.Module):
             calls to forward in the same round of dialog.
         """
         # Embed image, occurs once per dialog
-        if self.isAnswerer and self.imageEmbed is None:
+        if self.imageEmbed is None:
             self.imageEmbed = self.imgNet(self.imgEmbedDropout(self.image))
-        # Embed caption, occurs once per dialog
-        if self.captionEmbed is None:
-            self.captionEmbed = self.wordEmbed(self.captionTokens)
         # Embed questions
         while len(self.questionEmbeds) < len(self.questionTokens):
             idx = len(self.questionEmbeds)
@@ -184,16 +193,19 @@ class Encoder(nn.Module):
         while len(self.answerEmbeds) < len(self.answerTokens):
             idx = len(self.answerEmbeds)
             self.answerEmbeds.append(self.wordEmbed(self.answerTokens[idx]))
+        while len(self.answerEmbeds2) < len(self.answerTokens2):
+            idx = len(self.answerEmbeds2)
+            self.answerEmbeds2.append(self.wordEmbed(self.answerTokens2[idx]))
 
     def embedFact(self, factIdx):
-        """Embed facts i.e. caption and round 0 or question-answer pair otherwise"""
-        # Caption
+        """Embed facts i.e. image and round 0 or question-answer pair otherwise"""
+        # Image
         if factIdx == 0:
-            seq, seqLens = self.captionEmbed, self.captionLens
-            factEmbed, states = utils.dynamicRNN(
-                self.factRNN, seq, seqLens, returnStates=True
+            factEmbed, states = (
+                self.im2hids(self.imageEmbed),
+                [self.im2states(self.imageEmbed)],
             )
-        # QA pairs
+        # QAA triplets
         elif factIdx > 0:
             quesTokens, quesLens = (
                 self.questionTokens[factIdx - 1],
@@ -203,16 +215,23 @@ class Encoder(nn.Module):
                 self.answerTokens[factIdx - 1],
                 self.answerLengths[factIdx - 1],
             )
+            ansTokens2, ansLens2 = (
+                self.answerTokens2[factIdx - 1],
+                self.answerLengths2[factIdx - 1],
+            )
 
             qaTokens = utils.concatPaddedSequences(
                 quesTokens, quesLens, ansTokens, ansLens, padding="right"
             )
-            qa = self.wordEmbed(qaTokens)
-            qaLens = quesLens + ansLens
-            qaEmbed, states = utils.dynamicRNN(
-                self.factRNN, qa, qaLens, returnStates=True
+            qaaTokens = utils.concatPaddedSequences(
+                qaTokens, quesLens + ansLens, ansTokens2, ansLens2, padding="right"
             )
-            factEmbed = qaEmbed
+            qaa = self.wordEmbed(qaaTokens)
+            qaaLens = quesLens + ansLens + ansLens2
+            qaaEmbed, states = utils.dynamicRNN(
+                self.factRNN, qaa, qaaLens, returnStates=True
+            )
+            factEmbed = qaaEmbed
         factRNNstates = states
         self.factEmbeds.append((factEmbed, factRNNstates))
 
@@ -254,19 +273,10 @@ class Encoder(nn.Module):
             to be used as the initial Hidden and Cell states of the Decoder.
             See notes at the end on how (H, C) are computed.
         """
+        round = len(self.questionTokens)
 
         # Lazily embed input Image, Captions, Questions and Answers
         self.embedInputDialog()
-
-        if self.isAnswerer:
-            # For A-Bot, current round is the number of facts present,
-            # which is number of questions observed - 1 (as opposed
-            # to len(self.answerEmbeds), which may be inaccurate as
-            round = len(self.questionEmbeds) - 1
-        else:
-            # For Q-Bot, current round is the number of facts present,
-            # which is same as the number of answers observed
-            round = len(self.answerEmbeds)
 
         # Lazy computation of internal hidden embeddings (hence the while loops)
 
@@ -275,11 +285,10 @@ class Encoder(nn.Module):
             factIdx = len(self.factEmbeds)
             self.embedFact(factIdx)
 
-        # Embed any un-embedded questions (A-Bot only)
-        if self.isAnswerer:
-            while len(self.questionRNNStates) <= round:
-                qIdx = len(self.questionRNNStates)
-                self.embedQuestion(qIdx)
+        # Embed any un-embedded questions
+        while len(self.questionRNNStates) <= round:
+            qIdx = len(self.questionRNNStates)
+            self.embedQuestion(qIdx)
 
         # Concat facts and/or questions (i.e. history) for input to dialogRNN
         while len(self.dialogRNNInputs) <= round:
@@ -297,27 +306,14 @@ class Encoder(nn.Module):
         """
         Return hidden (H_link) and cell (C_link) states as per the following rule:
         (Currently this is defined only for numLayers == 2)
-        If A-Bot:
-          C_link == Question encoding RNN cell state (quesRNN)
-          H_link ==
-              Layer 0 : Question encoding RNN hidden state (quesRNN)
-              Layer 1 : DialogRNN hidden state (dialogRNN)
-
-        If Q-Bot:
-            C_link == Fact encoding RNN cell state (factRNN)
-            H_link ==
-                Layer 0 : Fact encoding RNN hidden state (factRNN)
-                Layer 1 : DialogRNN hidden state (dialogRNN)
+        C_link == Fact encoding RNN cell state (factRNN)
+        H_link ==
+            Layer 0 : Fact encoding RNN hidden state (factRNN)
+            Layer 1 : DialogRNN hidden state (dialogRNN)
         """
-        if self.isAnswerer:
-            quesRNNstates = self.questionRNNStates[-1][1]  # Latest quesRNN states
-            C_link = quesRNNstates[1]
-            H_link = quesRNNstates[0][:-1]
-            H_link = torch.cat([H_link, dialogHidden.unsqueeze(0)], 0)
-        else:
-            factRNNstates = self.factEmbeds[-1][1]  # Latest factRNN states
-            C_link = factRNNstates[1]
-            H_link = factRNNstates[0][:-1]
-            H_link = torch.cat([H_link, dialogHidden.unsqueeze(0)], 0)
+        factRNNstates = self.factEmbeds[-1][1]  # Latest factRNN states
+        C_link = factRNNstates[1]
+        H_link = factRNNstates[0][:-1]
+        H_link = torch.cat([H_link, dialogHidden.unsqueeze(0)], 0)
 
         return H_link, C_link
