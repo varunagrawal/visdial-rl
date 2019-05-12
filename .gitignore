@@ -5,6 +5,7 @@ __pycache__/
 .Python
 env/
 build/
+pulp.egg-info/
 
 # Checkpoints directory
 checkpoints

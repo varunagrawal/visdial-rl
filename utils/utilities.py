@@ -10,23 +10,23 @@ from six import iteritems
 
 
 # Initializing weights
-def initializeWeights(root, itype='xavier'):
-    assert itype == 'xavier', 'Only Xavier initialization supported'
+def initializeWeights(root, itype="xavier"):
+    assert itype == "xavier", "Only Xavier initialization supported"
 
     for module in root.modules():
         # Initialize weights
         name = type(module).__name__
         # If linear or embedding
-        if name in ['Embedding', 'Linear']:
+        if name in ["Embedding", "Linear"]:
             fanIn = module.weight.data.size(0)
             fanOut = module.weight.data.size(1)
 
             factor = math.sqrt(2.0 / (fanIn + fanOut))
             weight = torch.randn(fanIn, fanOut) * factor
             module.weight.data.copy_(weight)
-        elif 'LSTM' in name:
+        elif "LSTM" in name:
             for name, param in module.named_parameters():
-                if 'bias' in name:
+                if "bias" in name:
                     param.data.fill_(0.0)
                 else:
                     fanIn = param.size(0)
@@ -39,57 +39,74 @@ def initializeWeights(root, itype='xavier'):
             pass
 
         # Check for bias and reset
-        if hasattr(module, 'bias') and type(module.bias) != bool:
+        if hasattr(module, "bias") and type(module.bias) != bool:
             module.bias.data.fill_(0.0)
 
 
 def saveModel(model, optimizer, saveFile, params):
-    torch.save({
-        'model': model.state_dict(),
-        'optimizer': optimizer.state_dict(),
-        'params': params,
-    }, saveFile)
+    torch.save(
+        {
+            "model": model.state_dict(),
+            "optimizer": optimizer.state_dict(),
+            "params": params,
+        },
+        saveFile,
+    )
 
 
-def loadModel(params, agent='abot', overwrite=False):
+def loadModel(params, agent="abot", overwrite=False):
     if overwrite is False:
         params = params.copy()
     loadedParams = {}
     # should be everything used in encoderParam, decoderParam below
     encoderOptions = [
-        'encoder', 'vocabSize', 'embedSize', 'rnnHiddenSize', 'numLayers',
-        'useHistory', 'useIm', 'imgEmbedSize', 'imgFeatureSize', 'numRounds',
-        'dropout'
+        "encoder",
+        "vocabSize",
+        "embedSize",
+        "rnnHiddenSize",
+        "numLayers",
+        "useHistory",
+        "useIm",
+        "imgEmbedSize",
+        "imgFeatureSize",
+        "numRounds",
+        "dropout",
     ]
     decoderOptions = [
-        'decoder', 'vocabSize', 'embedSize', 'rnnHiddenSize', 'numLayers',
-        'dropout'
+        "decoder",
+        "vocabSize",
+        "embedSize",
+        "rnnHiddenSize",
+        "numLayers",
+        "dropout",
     ]
     modelOptions = encoderOptions + decoderOptions
 
     mdict = None
-    gpuFlag = params['useGPU']
-    continueFlag = params['continue']
-    numEpochs = params['numEpochs']
-    startArg = 'startFrom' if agent == 'abot' else 'qstartFrom'
+    gpuFlag = params["useGPU"]
+    continueFlag = params["continue"]
+    numEpochs = params["numEpochs"]
+    startArg = "startFrom" if agent == "abot" else "qstartFrom"
     if continueFlag:
-        assert params[startArg], "Can't continue training without a \
+        assert params[
+            startArg
+        ], "Can't continue training without a \
                                     checkpoint"
 
     # load a model from disk if it is given
     if params[startArg]:
-        print('Loading model (weights and config) from {}'.format(
-            params[startArg]))
+        print("Loading model (weights and config) from {}".format(params[startArg]))
 
         if gpuFlag:
             mdict = torch.load(params[startArg])
         else:
-            mdict = torch.load(params[startArg],
-                map_location=lambda storage, location: storage)
+            mdict = torch.load(
+                params[startArg], map_location=lambda storage, location: storage
+            )
 
         # Model options is a union of standard model options defined
         # above and parameters loaded from checkpoint
-        modelOptions = list(set(modelOptions).union(set(mdict['params'])))
+        modelOptions = list(set(modelOptions).union(set(mdict["params"])))
         for opt in modelOptions:
             if opt not in params:
                 # Loading options from a checkpoint which are
@@ -97,22 +114,24 @@ def loadModel(params, agent='abot', overwrite=False):
                 # not present in original parameter list.
                 if continueFlag:
                     print("Loaded option '%s' from checkpoint" % opt)
-                    params[opt] = mdict['params'][opt]
-                    loadedParams[opt] = mdict['params'][opt]
+                    params[opt] = mdict["params"][opt]
+                    loadedParams[opt] = mdict["params"][opt]
 
-            elif params[opt] != mdict['params'][opt]:
+            elif params[opt] != mdict["params"][opt]:
                 # When continuing training from a checkpoint, overwriting
                 # parameters loaded from checkpoint is okay.
                 if continueFlag:
                     print("Overwriting param '%s'" % str(opt))
-                    params[opt] = mdict['params'][opt]
+                    params[opt] = mdict["params"][opt]
 
-        params['continue'] = continueFlag
-        params['numEpochs'] = numEpochs
-        params['useGPU'] = gpuFlag
+        params["continue"] = continueFlag
+        params["numEpochs"] = numEpochs
+        params["useGPU"] = gpuFlag
 
-        if params['continue']:
-            assert 'ckpt_lRate' in params, "Checkpoint does not have\
+        if params["continue"]:
+            assert (
+                "ckpt_lRate" in params
+            ), "Checkpoint does not have\
                 info for restoring learning rate and optimizer."
 
     # assert False, "STOP right there, criminal scum!"
@@ -121,30 +140,31 @@ def loadModel(params, agent='abot', overwrite=False):
     encoderParam = {k: params[k] for k in encoderOptions}
     decoderParam = {k: params[k] for k in decoderOptions}
 
-    encoderParam['startToken'] = encoderParam['vocabSize'] - 2
-    encoderParam['endToken'] = encoderParam['vocabSize'] - 1
-    decoderParam['startToken'] = decoderParam['vocabSize'] - 2
-    decoderParam['endToken'] = decoderParam['vocabSize'] - 1
+    encoderParam["startToken"] = encoderParam["vocabSize"] - 2
+    encoderParam["endToken"] = encoderParam["vocabSize"] - 1
+    decoderParam["startToken"] = decoderParam["vocabSize"] - 2
+    decoderParam["endToken"] = decoderParam["vocabSize"] - 1
 
-    if agent == 'abot':
-        encoderParam['type'] = params['encoder']
-        decoderParam['type'] = params['decoder']
-        encoderParam['isAnswerer'] = True
+    if agent == "abot":
+        encoderParam["type"] = params["encoder"]
+        decoderParam["type"] = params["decoder"]
+        encoderParam["isAnswerer"] = True
         from visdial.models.answerer import Answerer
+
         model = Answerer(encoderParam, decoderParam)
 
-    elif agent == 'qbot':
-        encoderParam['type'] = params['qencoder']
-        decoderParam['type'] = params['qdecoder']
-        encoderParam['isAnswerer'] = False
-        encoderParam['useIm'] = False
+    elif agent == "qbot":
+        encoderParam["type"] = params["qencoder"]
+        decoderParam["type"] = params["qdecoder"]
+        encoderParam["isAnswerer"] = False
+        encoderParam["useIm"] = False
         from visdial.models.questioner import Questioner
-        model = Questioner(
-            encoderParam,
-            decoderParam,
-            imgFeatureSize=encoderParam['imgFeatureSize'])
 
-    if params['useGPU']:
+        model = Questioner(
+            encoderParam, decoderParam, imgFeatureSize=encoderParam["imgFeatureSize"]
+        )
+
+    if params["useGPU"]:
         model.cuda()
 
     for p in model.encoder.parameters():
@@ -157,36 +177,31 @@ def loadModel(params, agent='abot', overwrite=False):
     print(list(model.modules()))
     # copy parameters if specified
     if mdict:
-        model.load_state_dict(mdict['model'])
-        optim_state = mdict['optimizer']
+        model.load_state_dict(mdict["model"])
+        optim_state = mdict["optimizer"]
     else:
         optim_state = None
     return model, loadedParams, optim_state
 
 
 def clampGrad(grad, limit=5.0):
-    '''
+    """
     Gradient clip by value
-    '''
+    """
     grad.data.clamp_(min=-limit, max=limit)
     return grad
 
 
 def getSortedOrder(lens):
-    sortedLen, fwdOrder = torch.sort(
-        lens.contiguous().view(-1), dim=0, descending=True)
+    sortedLen, fwdOrder = torch.sort(lens.contiguous().view(-1), dim=0, descending=True)
     _, bwdOrder = torch.sort(fwdOrder)
     sortedLen = sortedLen.data
     sortedLen = sortedLen.cpu().numpy().tolist()
     return sortedLen, fwdOrder, bwdOrder
 
 
-def dynamicRNN(rnnModel,
-               seqInput,
-               seqLens,
-               initialState=None,
-               returnStates=False):
-    '''
+def dynamicRNN(rnnModel, seqInput, seqLens, initialState=None, returnStates=False):
+    """
     Inputs:
         rnnModel     : Any torch.nn RNN model
         seqInput     : (batchSize, maxSequenceLength, embedSize)
@@ -200,11 +215,12 @@ def dynamicRNN(rnnModel,
         sequence. If returnStates is True, also return a tuple of hidden
         and cell states at every layer of size (num_layers, batchSize,
         rnnHiddenSize)
-    '''
+    """
     sortedLen, fwdOrder, bwdOrder = getSortedOrder(seqLens)
     sortedSeqInput = seqInput.index_select(dim=0, index=fwdOrder)
     packedSeqInput = pack_padded_sequence(
-        sortedSeqInput, lengths=sortedLen, batch_first=True)
+        sortedSeqInput, lengths=sortedLen, batch_first=True
+    )
 
     if initialState is not None:
         hx = initialState
@@ -225,7 +241,7 @@ def dynamicRNN(rnnModel,
 
 
 def maskedNll(seq, gtSeq, returnScores=False):
-    '''
+    """
     Compute the NLL loss of ground truth (target) sentence given the
     model. Assumes that gtSeq has <START> and <END> token surrounding
     every sequence and gtSeq is left aligned (i.e. right padded)
@@ -240,7 +256,7 @@ def maskedNll(seq, gtSeq, returnScores=False):
             [  W1    W2    E  0   0   0]
         Mask (non-zero tokens in target):
             [  1     1     1  0   0   0]
-    '''
+    """
     # Shifting gtSeq 1 token left to remove <START>
     padColumn = gtSeq.data.new(gtSeq.size(0), 1).fill_(0)
     target = torch.cat([gtSeq, padColumn], dim=1)[:, 1:]
@@ -258,8 +274,8 @@ def maskedNll(seq, gtSeq, returnScores=False):
     return nll_loss
 
 
-def concatPaddedSequences(seq1, seqLens1, seq2, seqLens2, padding='right'):
-    '''
+def concatPaddedSequences(seq1, seqLens1, seq2, seqLens2, padding="right"):
+    """
     Concates two input sequences of shape (batchSize, seqLength). The
     corresponding lengths tensor is of shape (batchSize). Padding sense
     of input sequences needs to be specified as 'right' or 'left'
@@ -269,7 +285,7 @@ def concatPaddedSequences(seq1, seqLens1, seq2, seqLens2, padding='right'):
         seq2, seqLens2 : Second sequence tokens and length
         padding        : Padding sense of input sequences - either
                          'right' or 'left'
-    '''
+    """
 
     concat_list = []
     cat_seq = torch.cat([seq1, seq2], dim=1)
@@ -285,50 +301,58 @@ def concatPaddedSequences(seq1, seqLens1, seq2, seqLens2, padding='right'):
         if cat_len_ == 0:
             raise RuntimeError("Both input sequences are empty")
 
-        elif padding == 'left':
+        elif padding == "left":
             pad_len_1 = maxLen1 - len_1
             pad_len_2 = maxLen2 - len_2
             if len_1 == 0:
-                print("[Warning] Empty input sequence 1 given to "
-                      "concatPaddedSequences")
+                print(
+                    "[Warning] Empty input sequence 1 given to " "concatPaddedSequences"
+                )
                 cat_ = seq2[b_idx][pad_len_2:]
 
             elif len_2 == 0:
-                print("[Warning] Empty input sequence 2 given to "
-                      "concatPaddedSequences")
+                print(
+                    "[Warning] Empty input sequence 2 given to " "concatPaddedSequences"
+                )
                 cat_ = seq1[b_idx][pad_len_1:]
 
             else:
-                cat_ = torch.cat([seq1[b_idx][pad_len_1:],
-                                  seq2[b_idx][pad_len_2:]], 0)
+                cat_ = torch.cat([seq1[b_idx][pad_len_1:], seq2[b_idx][pad_len_2:]], 0)
             cat_padded = F.pad(
                 input=cat_,  # Left pad
                 pad=((maxCatLen - cat_len_), 0),
                 mode="constant",
-                value=0)
-        elif padding == 'right':
+                value=0,
+            )
+        elif padding == "right":
             if len_1 == 0:
-                print("[Warning] Empty input sequence 1 given to "
-                      "concatPaddedSequences")
+                print(
+                    "[Warning] Empty input sequence 1 given to " "concatPaddedSequences"
+                )
                 cat_ = seq2[b_idx][:len_1]
 
             elif len_2 == 0:
-                print("[Warning] Empty input sequence 2 given to "
-                      "concatPaddedSequences")
+                print(
+                    "[Warning] Empty input sequence 2 given to " "concatPaddedSequences"
+                )
                 cat_ = seq1[b_idx][:len_1]
 
             else:
-                cat_ = torch.cat([seq1[b_idx][:len_1],
-                                  seq2[b_idx][:len_2]], 0)
+                cat_ = torch.cat([seq1[b_idx][:len_1], seq2[b_idx][:len_2]], 0)
                 # cat_ = cat_seq[b_idx].masked_select(cat_seq[b_idx].ne(0))
             cat_padded = F.pad(
                 input=cat_,  # Right pad
                 pad=(0, (maxCatLen - cat_len_)),
                 mode="constant",
-                value=0)
+                value=0,
+            )
         else:
-            raise (ValueError, "Expected padding to be either 'left' or \
-                                'right', got '%s' instead." % padding)
+            raise (
+                ValueError,
+                "Expected padding to be either 'left' or \
+                                'right', got '%s' instead."
+                % padding,
+            )
         concat_list.append(cat_padded.unsqueeze(0))
     concat_output = torch.cat(concat_list, 0)
     return concat_output

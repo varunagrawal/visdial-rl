@@ -5,20 +5,22 @@ from utils import utilities as utils
 
 
 class Encoder(nn.Module):
-    def __init__(self,
-                 vocabSize,
-                 embedSize,
-                 rnnHiddenSize,
-                 numLayers,
-                 useIm,
-                 imgEmbedSize,
-                 imgFeatureSize,
-                 numRounds,
-                 isAnswerer,
-                 dropout=0,
-                 startToken=None,
-                 endToken=None,
-                 **kwargs):
+    def __init__(
+        self,
+        vocabSize,
+        embedSize,
+        rnnHiddenSize,
+        numLayers,
+        useIm,
+        imgEmbedSize,
+        imgFeatureSize,
+        numRounds,
+        isAnswerer,
+        dropout=0,
+        startToken=None,
+        endToken=None,
+        **kwargs
+    ):
         super(Encoder, self).__init__()
         self.vocabSize = vocabSize
         self.embedSize = embedSize
@@ -26,7 +28,7 @@ class Encoder(nn.Module):
         self.numLayers = numLayers
         assert self.numLayers > 1, "Less than 2 layers not supported!"
         if useIm:
-            self.useIm = useIm if not useIm else 'early'
+            self.useIm = useIm if not useIm else "early"
         else:
             self.useIm = False
         self.imgEmbedSize = imgEmbedSize
@@ -38,17 +40,16 @@ class Encoder(nn.Module):
         self.endToken = endToken
 
         # modules
-        self.wordEmbed = nn.Embedding(
-            self.vocabSize, self.embedSize, padding_idx=0)
+        self.wordEmbed = nn.Embedding(self.vocabSize, self.embedSize, padding_idx=0)
 
         # question encoder
         # image fuses early with words
-        if self.useIm == 'early':
+        if self.useIm == "early":
             quesInputSize = self.embedSize + self.imgEmbedSize
             dialogInputSize = 2 * self.rnnHiddenSize
             self.imgNet = nn.Linear(self.imgFeatureSize, self.imgEmbedSize)
             self.imgEmbedDropout = nn.Dropout(0.5)
-        elif self.useIm == 'late':
+        elif self.useIm == "late":
             quesInputSize = self.embedSize
             dialogInputSize = 2 * self.rnnHiddenSize + self.imgEmbedSize
             self.imgNet = nn.Linear(self.imgFeatureSize, self.imgEmbedSize)
@@ -64,7 +65,8 @@ class Encoder(nn.Module):
                 self.rnnHiddenSize,
                 self.numLayers,
                 batch_first=True,
-                dropout=0)
+                dropout=0,
+            )
 
         # history encoder
         self.factRNN = nn.LSTM(
@@ -72,7 +74,8 @@ class Encoder(nn.Module):
             self.rnnHiddenSize,
             self.numLayers,
             batch_first=True,
-            dropout=0)
+            dropout=0,
+        )
 
         # dialog rnn
         self.dialogRNN = nn.LSTMCell(dialogInputSize, self.rnnHiddenSize)
@@ -104,30 +107,32 @@ class Encoder(nn.Module):
         self.dialogHiddens = []
 
     def _initHidden(self):
-        '''Initial dialog rnn state - initialize with zeros'''
+        """Initial dialog rnn state - initialize with zeros"""
         # Dynamic batch size inference
-        assert self.batchSize != 0, 'Observe something to infer batch size.'
+        assert self.batchSize != 0, "Observe something to infer batch size."
         someTensor = self.dialogRNN.weight_hh.data
         h = someTensor.new(self.batchSize, self.dialogRNN.hidden_size).zero_()
         c = someTensor.new(self.batchSize, self.dialogRNN.hidden_size).zero_()
         return h, c
 
-    def observe(self,
-                round,
-                image=None,
-                caption=None,
-                ques=None,
-                ans=None,
-                captionLens=None,
-                quesLens=None,
-                ansLens=None):
-        '''
+    def observe(
+        self,
+        round,
+        image=None,
+        caption=None,
+        ques=None,
+        ans=None,
+        captionLens=None,
+        quesLens=None,
+        ansLens=None,
+    ):
+        """
         Store dialog input to internal model storage
 
         Note that all input sequences are assumed to be left-aligned (i.e.
         right-padded). Internally this alignment is changed to right-align
         for ease in computing final time step hidden states of each RNN
-        '''
+        """
         if image is not None:
             assert round == -1
             self.image = image
@@ -154,17 +159,17 @@ class Encoder(nn.Module):
             self.answerLengths.append(ansLens)
 
     def processSequence(self, seq, seqLen):
-        ''' Strip <START> and <END> token from a left-aligned sequence'''
+        """ Strip <START> and <END> token from a left-aligned sequence"""
         return seq[:, 1:], seqLen - 1
 
     def embedInputDialog(self):
-        '''
+        """
         Lazy embedding of input:
             Calling observe does not process (embed) any inputs. Since
             self.forward requires embedded inputs, this function lazily
             embeds them so that they are not re-computed upon multiple
             calls to forward in the same round of dialog.
-        '''
+        """
         # Embed image, occurs once per dialog
         if self.isAnswerer and self.imageEmbed is None:
             self.imageEmbed = self.imgNet(self.imgEmbedDropout(self.image))
@@ -174,46 +179,53 @@ class Encoder(nn.Module):
         # Embed questions
         while len(self.questionEmbeds) < len(self.questionTokens):
             idx = len(self.questionEmbeds)
-            self.questionEmbeds.append(
-                self.wordEmbed(self.questionTokens[idx]))
+            self.questionEmbeds.append(self.wordEmbed(self.questionTokens[idx]))
         # Embed answers
         while len(self.answerEmbeds) < len(self.answerTokens):
             idx = len(self.answerEmbeds)
             self.answerEmbeds.append(self.wordEmbed(self.answerTokens[idx]))
 
     def embedFact(self, factIdx):
-        '''Embed facts i.e. caption and round 0 or question-answer pair otherwise'''
+        """Embed facts i.e. caption and round 0 or question-answer pair otherwise"""
         # Caption
         if factIdx == 0:
             seq, seqLens = self.captionEmbed, self.captionLens
             factEmbed, states = utils.dynamicRNN(
-                self.factRNN, seq, seqLens, returnStates=True)
+                self.factRNN, seq, seqLens, returnStates=True
+            )
         # QA pairs
         elif factIdx > 0:
-            quesTokens, quesLens = \
-                self.questionTokens[factIdx - 1], self.questionLens[factIdx - 1]
-            ansTokens, ansLens = \
-                self.answerTokens[factIdx - 1], self.answerLengths[factIdx - 1]
+            quesTokens, quesLens = (
+                self.questionTokens[factIdx - 1],
+                self.questionLens[factIdx - 1],
+            )
+            ansTokens, ansLens = (
+                self.answerTokens[factIdx - 1],
+                self.answerLengths[factIdx - 1],
+            )
 
             qaTokens = utils.concatPaddedSequences(
-                quesTokens, quesLens, ansTokens, ansLens, padding='right')
+                quesTokens, quesLens, ansTokens, ansLens, padding="right"
+            )
             qa = self.wordEmbed(qaTokens)
             qaLens = quesLens + ansLens
             qaEmbed, states = utils.dynamicRNN(
-                self.factRNN, qa, qaLens, returnStates=True)
+                self.factRNN, qa, qaLens, returnStates=True
+            )
             factEmbed = qaEmbed
         factRNNstates = states
         self.factEmbeds.append((factEmbed, factRNNstates))
 
     def embedQuestion(self, qIdx):
-        '''Embed questions'''
+        """Embed questions"""
         quesIn = self.questionEmbeds[qIdx]
         quesLens = self.questionLens[qIdx]
-        if self.useIm == 'early':
+        if self.useIm == "early":
             image = self.imageEmbed.unsqueeze(1).repeat(1, quesIn.size(1), 1)
             quesIn = torch.cat([quesIn, image], 2)
         qEmbed, states = utils.dynamicRNN(
-            self.quesRNN, quesIn, quesLens, returnStates=True)
+            self.quesRNN, quesIn, quesLens, returnStates=True
+        )
         quesRNNstates = states
         self.questionRNNStates.append((qEmbed, quesRNNstates))
 
@@ -221,7 +233,7 @@ class Encoder(nn.Module):
         currIns = [self.factEmbeds[histIdx][0]]
         if self.isAnswerer:
             currIns.append(self.questionRNNStates[histIdx][0])
-        if self.useIm == 'late':
+        if self.useIm == "late":
             currIns.append(self.imageEmbed)
         hist_t = torch.cat(currIns, -1)
         self.dialogRNNInputs.append(hist_t)
@@ -236,12 +248,12 @@ class Encoder(nn.Module):
         self.dialogHiddens.append(hNew)
 
     def forward(self):
-        '''
+        """
         Returns:
             A tuple of tensors (H, C) each of shape (batchSize, rnnHiddenSize)
             to be used as the initial Hidden and Cell states of the Decoder.
             See notes at the end on how (H, C) are computed.
-        '''
+        """
 
         # Lazily embed input Image, Captions, Questions and Answers
         self.embedInputDialog()
@@ -282,7 +294,7 @@ class Encoder(nn.Module):
         # Latest dialogRNN hidden state
         dialogHidden = self.dialogHiddens[-1][0]
 
-        '''
+        """
         Return hidden (H_link) and cell (C_link) states as per the following rule:
         (Currently this is defined only for numLayers == 2)
         If A-Bot:
@@ -296,7 +308,7 @@ class Encoder(nn.Module):
             H_link ==
                 Layer 0 : Fact encoding RNN hidden state (factRNN)
                 Layer 1 : DialogRNN hidden state (dialogRNN)
-        '''
+        """
         if self.isAnswerer:
             quesRNNstates = self.questionRNNStates[-1][1]  # Latest quesRNN states
             C_link = quesRNNstates[1]

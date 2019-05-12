@@ -19,33 +19,42 @@ from model import PulpModel
 
 
 parser = argparse.ArgumentParser(description="Train Discriminative Questioning bot.")
-parser.add_argument('config', type=Path, help="YAML file for configuration.")
-parser.add_argument("--data", type=Path, help="Dataset root directory.", default="./data")
-parser.add_argument('--checkpoint', type=Path, help="Checkpoint to restart training from.")
-parser.add_argument('--gpus', type=int, nargs='+', default=[-1], help="GPU IDs to use")
+parser.add_argument("config", type=Path, help="YAML file for configuration.")
+parser.add_argument(
+    "--data", type=Path, help="Dataset root directory.", default="./data"
+)
+parser.add_argument(
+    "--checkpoint", type=Path, help="Checkpoint to restart training from."
+)
+parser.add_argument("--gpus", type=int, nargs="+", default=[-1], help="GPU IDs to use")
+
 
 def create_data_loaders(config):
     data_loaders = dict()
     data_loaders["train"] = get_dataloader(
-            Path(args.data, "coco_train_resnet152_pool5.pth"),
-            Path(args.data, "v2_mscoco_train2014_annotations.json"),
-            Path(args.data, "v2_OpenEnded_mscoco_train2014_questions.json"),
-            Path(args.data, "v2_mscoco_train2014_complementary_pairs.json"),
-            split="train",
-            batch_size=config["train_batch_size"])
-    maps= {"word_to_wid": data_loaders["train"].dataset.word_to_wid,
-            "wid_to_word": data_loaders["train"].dataset.wid_to_word,
-            "ans_to_aid": data_loaders["train"].dataset.ans_to_aid,
-            "aid_to_ans": data_loaders["train"].dataset.aid_to_ans,
-            "vocab": data_loaders["train"].dataset.vocab}
+        Path(args.data, "coco_train_resnet152_pool5.pth"),
+        Path(args.data, "v2_mscoco_train2014_annotations.json"),
+        Path(args.data, "v2_OpenEnded_mscoco_train2014_questions.json"),
+        Path(args.data, "v2_mscoco_train2014_complementary_pairs.json"),
+        split="train",
+        batch_size=config["train_batch_size"],
+    )
+    maps = {
+        "word_to_wid": data_loaders["train"].dataset.word_to_wid,
+        "wid_to_word": data_loaders["train"].dataset.wid_to_word,
+        "ans_to_aid": data_loaders["train"].dataset.ans_to_aid,
+        "aid_to_ans": data_loaders["train"].dataset.aid_to_ans,
+        "vocab": data_loaders["train"].dataset.vocab,
+    }
     data_loaders["val"] = get_dataloader(
-            Path(args.data, "coco_train_resnet152_pool5.pth"),
-            Path(args.data, "v2_mscoco_val2014_annotations.json"),
-            Path(args.data, "v2_OpenEnded_mscoco_val2014_questions.json"),
-            Path(args.data, "v2_mscoco_val2014_complementary_pairs.json"),
-            split="val",
-            maps=maps,
-            batch_size=config["eval_batch_size"])
+        Path(args.data, "coco_train_resnet152_pool5.pth"),
+        Path(args.data, "v2_mscoco_val2014_annotations.json"),
+        Path(args.data, "v2_OpenEnded_mscoco_val2014_questions.json"),
+        Path(args.data, "v2_mscoco_val2014_complementary_pairs.json"),
+        split="val",
+        maps=maps,
+        batch_size=config["eval_batch_size"],
+    )
     return data_loaders, maps
 
 
@@ -55,7 +64,7 @@ def create_model(config, img_feat_size, maps, device, checkpoint=None):
     if checkpoint is not None:
         model.load_state_dict(checkpoint)
     return model
-    
+
 
 def train_epoch(data_loader, model, criteria, optimizer, device):
     model.train()
@@ -73,11 +82,17 @@ def train_epoch(data_loader, model, criteria, optimizer, device):
         q_log_probs, dq_log_prob = model.forward()
         loss += criteria["question"](q_log_probs, datum["questions"][:, 0])
         loss += criteria["discriminative"](dq_log_prob, datum["discriminant"] == 0)
-        for r in range(datum["questions"].size(1)-1):
-            model.observe(round=r, question=datum["questions"][:, r], question_lengths=datum["questions_lengths"])
+        for r in range(datum["questions"].size(1) - 1):
+            model.observe(
+                round=r,
+                question=datum["questions"][:, r],
+                question_lengths=datum["questions_lengths"],
+            )
             q_log_probs, dq_log_prob = model.forward()
-            loss += criteria["question"](q_log_probs, datum["questions"][:, r+1])
-            loss += criteria["discriminative"](dq_log_prob, datum["discriminant"] == r+1)
+            loss += criteria["question"](q_log_probs, datum["questions"][:, r + 1])
+            loss += criteria["discriminative"](
+                dq_log_prob, datum["discriminant"] == r + 1
+            )
         total_loss += loss.item()
         loss.backward()
         optimizer.step()
@@ -101,11 +116,17 @@ def eval_epoch(data_loader, model, criteria, device):
             q_log_probs, dq_log_prob = model.forward()
             loss += criteria["question"](q_log_probs, datum["questions"][:, 0])
             loss += criteria["discriminative"](dq_log_prob, datum["discriminant"] == 0)
-            for r in range(datum["questions"].size(1)-1):
-                model.observe(round=r, question=datum["questions"][:, r], question_lengths=datum["questions_lengths"])
+            for r in range(datum["questions"].size(1) - 1):
+                model.observe(
+                    round=r,
+                    question=datum["questions"][:, r],
+                    question_lengths=datum["questions_lengths"],
+                )
                 q_log_probs, dq_log_prob = model.forward()
-                loss += criteria["question"](q_log_probs, datum["questions"][:, r+1])
-                loss += criteria["discriminative"](dq_log_prob, datum["discriminant"] == r+1)
+                loss += criteria["question"](q_log_probs, datum["questions"][:, r + 1])
+                loss += criteria["discriminative"](
+                    dq_log_prob, datum["discriminant"] == r + 1
+                )
             total_loss += loss.item()
     average_loss = total_loss / samples
     return average_loss
@@ -122,13 +143,23 @@ def train(config, data_loaders, model, device):
     # Start training
     for epoch in range(config["train"]["num_epochs"]):
         start_epoch = timer()
-        train_loss = train_epoch(data_loaders["train"], model, criteria, optimizer, device)
+        train_loss = train_epoch(
+            data_loaders["train"], model, criteria, optimizer, device
+        )
         val_loss = eval_epoch(data_loaders["val"], model, criteria, device)
-        print("[Epoch {:2d}] Training Loss: {:.4f}, Validation Loss: {:.4f}".format(train_loss, val_loss))
+        print(
+            "[Epoch {:2d}] Training Loss: {:.4f}, Validation Loss: {:.4f}".format(
+                train_loss, val_loss
+            )
+        )
         save_path = Path(config["save_dir"], "epoch_{:3d}.pt".format(epoch))
         torch.save(model.state_dict(), save_path)
         stop_epoch = timer()
-        print("Epoch elapsed time: {}, model saved at {}".format(timedelta(round(stop_epoch - start_epoch)), save_path))
+        print(
+            "Epoch elapsed time: {}, model saved at {}".format(
+                timedelta(round(stop_epoch - start_epoch)), save_path
+            )
+        )
         gc.collect()
 
 

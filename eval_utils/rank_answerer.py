@@ -19,7 +19,7 @@ from six.moves import range
 
 
 def rankOptions(options, gtOptions, scores):
-    '''Rank a batch of examples against a list of options.'''
+    """Rank a batch of examples against a list of options."""
     numOptions = options.size(1)
     # Compute score of GT options in 'scores'
     gtScores = scores.gather(1, gtOptions.unsqueeze(1))
@@ -31,7 +31,7 @@ def rankOptions(options, gtOptions, scores):
 
 
 def rankABot(aBot, dataset, split, scoringFunction, exampleLimit=None):
-    '''
+    """
         Evaluate A-Bot performance on ranking answer option when it is
         shown ground truth image features, captions and questions.
 
@@ -46,7 +46,7 @@ def rankABot(aBot, dataset, split, scoringFunction, exampleLimit=None):
                               utils.maskedNll is the only such function used.
             exampleLimit    : Maximum number of data points to use from
                               the dataset split. If None, all data points.
-    '''
+    """
     batchSize = dataset.batchSize
     numRounds = dataset.numRounds
     if exampleLimit is None:
@@ -63,7 +63,8 @@ def rankABot(aBot, dataset, split, scoringFunction, exampleLimit=None):
         batch_size=batchSize,
         shuffle=True,
         num_workers=1,
-        collate_fn=dataset.collate_fn)
+        collate_fn=dataset.collate_fn,
+    )
 
     totalLoss, totalTokens = 0, 0
     ranks = []
@@ -75,25 +76,24 @@ def rankABot(aBot, dataset, split, scoringFunction, exampleLimit=None):
 
         if dataset.useGPU:
             batch = {
-                key: v.cuda() if hasattr(v, 'cuda') else v
-                for key, v in batch.items()
+                key: v.cuda() if hasattr(v, "cuda") else v for key, v in batch.items()
             }
         else:
             batch = {
-                key: v.contiguous() if hasattr(v, 'cuda') else v
+                key: v.contiguous() if hasattr(v, "cuda") else v
                 for key, v in batch.items()
             }
 
-        image = batch['img_feat']
-        caption = batch['cap']
-        captionLens = batch['cap_len']
-        questions = batch['ques']
-        quesLens = batch['ques_len']
-        answers = batch['ans']
-        ansLens = batch['ans_len']
-        options = batch['opt']
-        optionLens = batch['opt_len']
-        correctOptionInds = batch['ans_id']
+        image = batch["img_feat"]
+        caption = batch["cap"]
+        captionLens = batch["cap_len"]
+        questions = batch["ques"]
+        quesLens = batch["ques_len"]
+        answers = batch["ans"]
+        ansLens = batch["ans_len"]
+        options = batch["opt"]
+        optionLens = batch["opt_len"]
+        correctOptionInds = batch["ans_id"]
         aBot.reset()
         aBot.observe(-1, image=image, caption=caption, captionLens=captionLens)
         with torch.no_grad():
@@ -103,15 +103,18 @@ def rankABot(aBot, dataset, split, scoringFunction, exampleLimit=None):
                     ques=questions[:, round],
                     quesLens=quesLens[:, round],
                     ans=answers[:, round],
-                    ansLens=ansLens[:, round])
-                logProbs = aBot.evalOptions(options[:, round],
-                                            optionLens[:, round], scoringFunction)
+                    ansLens=ansLens[:, round],
+                )
+                logProbs = aBot.evalOptions(
+                    options[:, round], optionLens[:, round], scoringFunction
+                )
                 logProbsCurrent = aBot.forward()
                 logProbsAll[round].append(
-                    scoringFunction(logProbsCurrent,
-                                    answers[:, round].contiguous()))
-                batchRanks = rankOptions(options[:, round],
-                                         correctOptionInds[:, round], logProbs)
+                    scoringFunction(logProbsCurrent, answers[:, round].contiguous())
+                )
+                batchRanks = rankOptions(
+                    options[:, round], correctOptionInds[:, round], logProbs
+                )
                 ranks.append(batchRanks)
 
             end_t = timer()
@@ -129,7 +132,7 @@ def rankABot(aBot, dataset, split, scoringFunction, exampleLimit=None):
     logProbsAll = [torch.stack(lprobs).mean() for lprobs in logProbsAll]
     roundwiseLogProbs = torch.stack(logProbsAll).data.cpu().numpy()
     logProbsMean = roundwiseLogProbs.mean()
-    rankMetrics['logProbsMean'] = logProbsMean
+    rankMetrics["logProbsMean"] = logProbsMean
 
     dataset.split = original_split
     return rankMetrics

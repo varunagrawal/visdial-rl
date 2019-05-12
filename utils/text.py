@@ -12,8 +12,11 @@ import nltk
 
 def tokenize(sentence):
     sentence = sentence.lower()
-    return [i for i in re.split(r"([-.\"',:? !\$#@~()*&\^%;\[\]/\\\+<>\n=])", sentence) if
-            i != '' and i != ' ' and i != '\n']
+    return [
+        i
+        for i in re.split(r"([-.\"',:? !\$#@~()*&\^%;\[\]/\\\+<>\n=])", sentence)
+        if i != "" and i != " " and i != "\n"
+    ]
 
 
 def preprocess_questions(dataset, method="nltk", display=True):
@@ -45,7 +48,7 @@ def get_vocabulary(dataset, min_word_count=0):
     # print('\n'.join(map(str, cw[:20])))
 
     # Add the 'UNK' token
-    vocab.append('UNK')  # UNK has it's own ID
+    vocab.append("UNK")  # UNK has it's own ID
 
     return vocab
 
@@ -56,7 +59,7 @@ def remove_tail_words(dataset, vocab, display=True):
 
     for idx, d in enumerate(tqdm(dataset, leave=display)):
         words = d["question_tokens"]
-        question = [w if w in vocab else 'UNK' for w in words]
+        question = [w if w in vocab else "UNK" for w in words]
         d["question_tokens"] = question
 
     return dataset
@@ -97,8 +100,7 @@ def get_top_answers(dataset, top=1000, display=True):
     print("{0} unqiue answers".format(len(counts)))
 
     # Get a list of answers sorted by how common they are
-    ans_counts = sorted([(count, ans)
-                         for ans, count in counts.items()], reverse=True)
+    ans_counts = sorted([(count, ans) for ans, count in counts.items()], reverse=True)
     top_answers = []
 
     for i in range(top):
@@ -114,7 +116,7 @@ def get_top_answers(dataset, top=1000, display=True):
 def encode_answers(dataset, ans_to_aid, display=True):
     print("Encoding answers")
     for d in tqdm(dataset, leave=display):
-        d["answer_id"] = ans_to_aid[d['answer'].lower()]
+        d["answer_id"] = ans_to_aid[d["answer"].lower()]
 
     return dataset
 
@@ -134,6 +136,5 @@ def process_single_question(question, vocab, word_to_wid, max_length=25):
     d = [{"question": question}]
     d = preprocess_questions(d, display=False)
     d = remove_tail_words(d, vocab, display=False)
-    encoded_question = encode_questions(d, word_to_wid,
-                                        max_length, display=False)
+    encoded_question = encode_questions(d, word_to_wid, max_length, display=False)
     return encoded_question[0]

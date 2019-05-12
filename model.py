@@ -4,6 +4,7 @@ import torch.nn as nn
 from visdial.models.questioner import Questioner
 from vqa.models.deeperlstm import DeeperLSTM
 
+
 class PulpModel(nn.Module):
     def __init__(self, config, maps, image_feature_size):
         super(PulpModel, self).__init__()
@@ -14,9 +15,11 @@ class PulpModel(nn.Module):
         config["questioner"]["encoder"]["imgFeatureSize"] = image_feature_size
         config["answerer"]["vocab_size"] = len(maps["word_to_wid"]) + 1
         config["answerer"]["output_dim"] = len(maps["aid_to_ans"])
-        self.questioner = Questioner(config["questioner"]["encoder"],
-                config["questioner"]["decoder"],
-                image_feature_size)
+        self.questioner = Questioner(
+            config["questioner"]["encoder"],
+            config["questioner"]["decoder"],
+            image_feature_size,
+        )
         self.answerer = DeeperLSTM(**config["answerer"])
         self.maps = maps
         self.aid_to_ans = maps["aid_to_ans"]
@@ -31,11 +34,13 @@ class PulpModel(nn.Module):
         self.image_2 = None
         self.questioner.reset()
 
-    def observe(self, round=-1, question=None, question_lengths=None, image_1=None, image_2=None):
+    def observe(
+        self, round=-1, question=None, question_lengths=None, image_1=None, image_2=None
+    ):
         if isinstance(image_1, torch.Tensor):
             self.image_1 = image_1
             self.questioner.observe(round, image=image_1)
-        
+
         if isinstance(image_2, torch.Tensor):
             self.image_2 = image_2
 

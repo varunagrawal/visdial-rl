@@ -8,15 +8,17 @@ from utils import utilities as utils
 
 
 class Decoder(nn.Module):
-    def __init__(self,
-                 vocabSize,
-                 embedSize,
-                 rnnHiddenSize,
-                 numLayers,
-                 startToken,
-                 endToken,
-                 dropout=0,
-                 **kwargs):
+    def __init__(
+        self,
+        vocabSize,
+        embedSize,
+        rnnHiddenSize,
+        numLayers,
+        startToken,
+        endToken,
+        dropout=0,
+        **kwargs
+    ):
         super(Decoder, self).__init__()
         self.vocabSize = vocabSize
         self.embedSize = embedSize
@@ -32,12 +34,13 @@ class Decoder(nn.Module):
             self.rnnHiddenSize,
             self.numLayers,
             batch_first=True,
-            dropout=self.dropout)
+            dropout=self.dropout,
+        )
         self.outNet = nn.Linear(self.rnnHiddenSize, self.vocabSize)
         self.logSoftmax = nn.LogSoftmax(dim=1)
 
     def forward(self, encStates, inputSeq):
-        '''
+        """
         Given encoder states, forward pass an input sequence 'inputSeq' to
         compute its log likelihood under the current decoder RNN state.
 
@@ -55,7 +58,7 @@ class Decoder(nn.Module):
             maximizing the probability of the next token ("teacher forcing").
             See 'maskedNll' in utils/utilities.py where the log probability of
             the next time step token is indexed out for computing NLL loss.
-        '''
+        """
         if inputSeq is not None:
             inputSeq = self.wordEmbed(inputSeq)
             outputs, _ = self.rnn(inputSeq, encStates)
@@ -67,12 +70,8 @@ class Decoder(nn.Module):
             logProbs = flatLogProbs.view(outputSize[0], outputSize[1], -1)
         return logProbs
 
-    def forwardDecode(self,
-                      encStates,
-                      maxSeqLen=20,
-                      inference='sample',
-                      beamSize=1):
-        '''
+    def forwardDecode(self, encStates, maxSeqLen=20, inference="sample", beamSize=1):
+        """
         Decode a sequence of tokens given an encoder state, using either
         sampling or greedy inference.
 
@@ -89,8 +88,8 @@ class Decoder(nn.Module):
             * This function is not called during SL pre-training
             * Greedy inference is used for evaluation
             * Sampling is used in RL fine-tuning
-        '''
-        if inference == 'greedy' and beamSize > 1:
+        """
+        if inference == "greedy" and beamSize > 1:
             # Use beam search inference when beam size is > 1
             return self.beamSearchDecoder(encStates, beamSize, maxSeqLen)
 
@@ -121,7 +120,7 @@ class Decoder(nn.Module):
 
         # Generating tokens sequentially
         for t in range(maxLen - 1):
-            emb = self.wordEmbed(seq[:, t:t + 1])
+            emb = self.wordEmbed(seq[:, t : t + 1])
             # emb has shape  (batch, 1, embedSize)
             output, hid = self.rnn(emb, hid)
             # output has shape (batch, 1, rnnHiddenSize)
@@ -142,17 +141,16 @@ class Decoder(nn.Module):
             END_TOKEN_IDX = self.endToken - 1
 
             probs = torch.exp(logProb)
-            if inference == 'sample':
+            if inference == "sample":
                 categorical_dist = Categorical(probs)
                 sample = categorical_dist.sample()
                 # Saving log probs for a subsequent reinforce call
                 self.saved_log_probs.append(categorical_dist.log_prob(sample))
                 sample = sample.unsqueeze(-1)
-            elif inference == 'greedy':
+            elif inference == "greedy":
                 _, sample = torch.max(probs, dim=1, keepdim=True)
             else:
-                raise ValueError(
-                    "Invalid inference type: '{}'".format(inference))
+                raise ValueError("Invalid inference type: '{}'".format(inference))
 
             # Compensating for removed padding token prediction earlier
             sample = sample + 1  # Incrementing all token indices by 1
@@ -195,7 +193,7 @@ class Decoder(nn.Module):
         return samples, sampleLens
 
     def evalOptions(self, encStates, options, optionLens, scoringFunction):
-        '''
+        """
         Forward pass a set of candidate options to get log probabilities
 
         Arguments:
@@ -211,28 +209,31 @@ class Decoder(nn.Module):
         Output:
             A (batchSize, numOptions) tensor containing the score
             of each option sentence given by the generator
-        '''
+        """
         batchSize, numOptions, maxLen = options.size()
         optionsFlat = options.contiguous().view(-1, maxLen)
 
         # Reshaping H, C for each option
-        encStates = [x.unsqueeze(2).repeat(1,1,numOptions,1).\
-                        view(self.numLayers, -1, self.rnnHiddenSize)
-                        for x in encStates]
+        encStates = [
+            x.unsqueeze(2)
+            .repeat(1, 1, numOptions, 1)
+            .view(self.numLayers, -1, self.rnnHiddenSize)
+            for x in encStates
+        ]
 
         logProbs = self.forward(encStates, inputSeq=optionsFlat)
         scores = scoringFunction(logProbs, optionsFlat, returnScores=True)
         return scores.view(batchSize, numOptions)
 
     def reinforce(self, reward):
-        '''
+        """
         Compute loss using REINFORCE on log probabilities of tokens
         sampled from decoder RNN, scaled by input 'reward'.
 
         Note that an earlier call to forwardDecode must have been
         made in order to have samples for which REINFORCE can be
         applied. These samples are stored in 'self.saved_log_probs'.
-        '''
+        """
         loss = 0
         # samples = torch.stack(self.samples, 1)
         # sampleLens = self.sampleLens - 1
@@ -244,14 +245,14 @@ class Decoder(nn.Module):
         return loss
 
     def beamSearchDecoder(self, initStates, beamSize, maxSeqLen):
-        '''
+        """
         Beam search for sequence generation
 
         Arguments:
             initStates - Initial encoder states tuple
             beamSize - Beam Size
             maxSeqLen - Maximum length of sequence to decode
-        '''
+        """
 
         # For now, use beam search for evaluation only
         assert self.training == False
@@ -281,7 +282,8 @@ class Decoder(nn.Module):
 
         # Inits
         beamTokensTable = th.LongTensor(batchSize, beamSize, maxLen).fill_(
-            self.endToken)
+            self.endToken
+        )
         beamTokensTable = Variable(beamTokensTable)
         backIndices = th.LongTensor(batchSize, beamSize, maxLen).fill_(-1)
         backIndices = Variable(backIndices)
@@ -306,12 +308,10 @@ class Decoder(nn.Module):
 
                 # Repeating hiddenStates 'beamSize' times for subsequent self.rnn calls
                 hiddenStates = [
-                    x.unsqueeze(2).repeat(1, 1, beamSize, 1)
-                    for x in hiddenStates
+                    x.unsqueeze(2).repeat(1, 1, beamSize, 1) for x in hiddenStates
                 ]
                 hiddenStates = [
-                    x.view(self.numLayers, -1, self.rnnHiddenSize)
-                    for x in hiddenStates
+                    x.view(self.numLayers, -1, self.rnnHiddenSize) for x in hiddenStates
                 ]
                 # H_0 and C_0 have shape (numLayers, batchSize*beamSize, rnnHiddenSize)
             else:
@@ -319,7 +319,8 @@ class Decoder(nn.Module):
                 emb = self.wordEmbed(beamTokensTable[:, :, t - 1])
                 # emb has shape (batchSize, beamSize, embedSize)
                 output, hiddenStates = self.rnn(
-                    emb.view(-1, 1, self.embedSize), hiddenStates)
+                    emb.view(-1, 1, self.embedSize), hiddenStates
+                )
                 # output has shape (batchSize*beamSize, 1, rnnHiddenSize)
                 scores = self.outNet(output.squeeze())
                 logProbsCurrent = self.logSoftmax(scores)
@@ -328,16 +329,17 @@ class Decoder(nn.Module):
                 # sampling (RL fine-tuning). However, the padding token is still
                 # present in the generator vocab and needs to be handled in this
                 # beam search function. This will be supported in a future release.
-                logProbsCurrent = logProbsCurrent.view(batchSize, beamSize,
-                                                       self.vocabSize)
+                logProbsCurrent = logProbsCurrent.view(
+                    batchSize, beamSize, self.vocabSize
+                )
 
                 if LENGTH_NORM:
                     # Add (current log probs / (t+1))
-                    logProbs = logProbsCurrent * (aliveVector.float() /
-                                                  (t + 1))
+                    logProbs = logProbsCurrent * (aliveVector.float() / (t + 1))
                     # Add (previous log probs * (t/t+1) ) <- Mean update
                     coeff_ = aliveVector.eq(0).float() + (
-                        aliveVector.float() * t / (t + 1))
+                        aliveVector.float() * t / (t + 1)
+                    )
                     logProbs += logProbSums.unsqueeze(2) * coeff_
                 else:
                     # Add currrent token logProbs for alive beams only
@@ -349,18 +351,21 @@ class Decoder(nn.Module):
                 # which correspond to ended beams so as to only compare
                 # one copy when sorting logProbs
                 mask_ = aliveVector.eq(0).repeat(1, 1, self.vocabSize)
-                mask_[:, :,
-                      0] = 0  # Zeroing all except first row for ended beams
+                mask_[:, :, 0] = 0  # Zeroing all except first row for ended beams
                 minus_infinity_ = torch.min(logProbs).data[0]
                 logProbs.data.masked_fill_(mask_.data, minus_infinity_)
 
                 logProbs = logProbs.view(batchSize, -1)
-                tokensArray = tokenArange.unsqueeze(0).unsqueeze(0).\
-                                repeat(batchSize,beamSize,1)
+                tokensArray = (
+                    tokenArange.unsqueeze(0).unsqueeze(0).repeat(batchSize, beamSize, 1)
+                )
                 tokensArray.masked_fill_(aliveVector.eq(0), self.endToken)
                 tokensArray = tokensArray.view(batchSize, -1)
-                backIndexArray = backVector.unsqueeze(2).\
-                                repeat(1,1,self.vocabSize).view(batchSize,-1)
+                backIndexArray = (
+                    backVector.unsqueeze(2)
+                    .repeat(1, 1, self.vocabSize)
+                    .view(batchSize, -1)
+                )
 
                 topLogProbs, topIdx = logProbs.topk(beamSize, dim=1)
 
@@ -375,13 +380,19 @@ class Decoder(nn.Module):
                 original_state_size = hiddenCurrent.size()
                 num_layers, _, rnnHiddenSize = original_state_size
                 hiddenCurrent = hiddenCurrent.view(
-                    num_layers, batchSize, beamSize, rnnHiddenSize)
+                    num_layers, batchSize, beamSize, rnnHiddenSize
+                )
                 cellCurrent = cellCurrent.view(
-                    num_layers, batchSize, beamSize, rnnHiddenSize)
+                    num_layers, batchSize, beamSize, rnnHiddenSize
+                )
 
                 # Update states according to the next top beams
-                backIndexVector = backIndices[:, :, t].unsqueeze(0)\
-                    .unsqueeze(-1).repeat(num_layers, 1, 1, rnnHiddenSize)
+                backIndexVector = (
+                    backIndices[:, :, t]
+                    .unsqueeze(0)
+                    .unsqueeze(-1)
+                    .repeat(num_layers, 1, 1, rnnHiddenSize)
+                )
                 hiddenCurrent = hiddenCurrent.gather(2, backIndexVector)
                 cellCurrent = cellCurrent.gather(2, backIndexVector)
 
@@ -391,7 +402,7 @@ class Decoder(nn.Module):
                 hiddenStates = (hiddenCurrent, cellCurrent)
 
             # Detecting endToken to end beams
-            aliveVector = beamTokensTable[:, :, t:t + 1].ne(self.endToken)
+            aliveVector = beamTokensTable[:, :, t : t + 1].ne(self.endToken)
             aliveBeams = aliveVector.data.long().sum()
             finalLen = t
             if aliveBeams == 0:
@@ -407,11 +418,11 @@ class Decoder(nn.Module):
         tokenIdx = finalLen
         backID = backIndices[:, :, tokenIdx]
         tokens = []
-        while (tokenIdx >= 0):
-            tokens.append(beamTokensTable[:,:,tokenIdx].\
-                        gather(1, backID).unsqueeze(2))
-            backID = backIndices[:, :, tokenIdx].\
-                        gather(1, backID)
+        while tokenIdx >= 0:
+            tokens.append(
+                beamTokensTable[:, :, tokenIdx].gather(1, backID).unsqueeze(2)
+            )
+            backID = backIndices[:, :, tokenIdx].gather(1, backID)
             tokenIdx = tokenIdx - 1
 
         tokens.append(startTokenArray.unsqueeze(2).repeat(1, beamSize, 1).data)

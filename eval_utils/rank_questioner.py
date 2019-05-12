@@ -20,7 +20,7 @@ from six.moves import range
 
 
 def rankQBot(qBot, dataset, split, exampleLimit=None, verbose=0):
-    '''
+    """
         Evaluates Q-Bot performance on image retrieval when it is shown
         ground truth captions, questions and answers. Q-Bot does not
         generate dialog in this setting - it only encodes ground truth
@@ -34,7 +34,7 @@ def rankQBot(qBot, dataset, split, exampleLimit=None, verbose=0):
 
             exampleLimit : Maximum number of data points to use from
                            the dataset split. If None, all data points.
-    '''
+    """
     batchSize = dataset.batchSize
     numRounds = dataset.numRounds
     if exampleLimit is None:
@@ -49,7 +49,8 @@ def rankQBot(qBot, dataset, split, exampleLimit=None, verbose=0):
         batch_size=batchSize,
         shuffle=True,
         num_workers=0,
-        collate_fn=dataset.collate_fn)
+        collate_fn=dataset.collate_fn,
+    )
 
     # enumerate all gt features and all predicted features
     gtImgFeatures = []
@@ -63,22 +64,18 @@ def rankQBot(qBot, dataset, split, exampleLimit=None, verbose=0):
             break
 
         if dataset.useGPU:
-            batch = {
-                key: v.cuda()
-                for key, v in batch.items() if hasattr(v, 'cuda')
-            }
+            batch = {key: v.cuda() for key, v in batch.items() if hasattr(v, "cuda")}
         else:
             batch = {
-                key: v.contiguous()
-                for key, v in batch.items() if hasattr(v, 'cuda')
+                key: v.contiguous() for key, v in batch.items() if hasattr(v, "cuda")
             }
-        caption = batch['cap']
-        captionLens = batch['cap_len']
-        gtQuestions = batch['ques']
-        gtQuesLens = batch['ques_len']
-        answers = batch['ans']
-        ansLens = batch['ans_len']
-        gtFeatures = batch['img_feat']
+        caption = batch["cap"]
+        captionLens = batch["cap_len"]
+        gtQuestions = batch["ques"]
+        gtQuesLens = batch["ques_len"]
+        answers = batch["ans"]
+        ansLens = batch["ans_len"]
+        gtFeatures = batch["img_feat"]
         qBot.reset()
         qBot.observe(-1, caption=caption, captionLens=captionLens)
         predFeatures = qBot.predictImage()
@@ -90,16 +87,14 @@ def rankQBot(qBot, dataset, split, exampleLimit=None, verbose=0):
         with torch.no_grad():
             for round in range(numRounds):
                 qBot.observe(
-                    round,
-                    ques=gtQuestions[:, round],
-                    quesLens=gtQuesLens[:, round])
-                qBot.observe(
-                    round, ans=answers[:, round], ansLens=ansLens[:, round])
+                    round, ques=gtQuestions[:, round], quesLens=gtQuesLens[:, round]
+                )
+                qBot.observe(round, ans=answers[:, round], ansLens=ansLens[:, round])
                 logProbsCurrent = qBot.forward()
                 # Evaluating logProbs for cross entropy
                 logProbsAll[round].append(
-                    utils.maskedNll(logProbsCurrent,
-                                    gtQuestions[:, round].contiguous()))
+                    utils.maskedNll(logProbsCurrent, gtQuestions[:, round].contiguous())
+                )
                 predFeatures = qBot.predictImage()
                 # Evaluating feature regression network
                 featLoss = F.mse_loss(predFeatures, gtFeatures)
@@ -131,8 +126,7 @@ def rankQBot(qBot, dataset, split, exampleLimit=None, verbose=0):
     if verbose:
         print("Percentile mean rank (round, mean, low, high)")
     for round in range(numRounds + 1):
-        predFeatures = torch.cat(roundwiseFeaturePreds[round],
-                                 0).data.cpu().numpy()
+        predFeatures = torch.cat(roundwiseFeaturePreds[round], 0).data.cpu().numpy()
         # num_examples x num_examples
         dists = pairwise_distances(predFeatures, gtFeatures)
         ranks = []
@@ -148,21 +142,21 @@ def rankQBot(qBot, dataset, split, exampleLimit=None, verbose=0):
         percRankHigh = 100 * (1 - ((meanRank - se) / poolSize))
         if verbose:
             print((round, meanPercRank, percRankLow, percRankHigh))
-        rankMetrics['percentile'] = meanPercRank
-        rankMetrics['featLoss'] = roundwiseFeatLoss[round]
+        rankMetrics["percentile"] = meanPercRank
+        rankMetrics["featLoss"] = roundwiseFeatLoss[round]
         if round < len(roundwiseLogProbs):
-            rankMetrics['logProbs'] = roundwiseLogProbs[round]
+            rankMetrics["logProbs"] = roundwiseLogProbs[round]
         rankMetricsRounds.append(rankMetrics)
 
-    rankMetricsRounds[-1]['logProbsMean'] = logProbsMean
-    rankMetricsRounds[-1]['featLossMean'] = featLossMean
+    rankMetricsRounds[-1]["logProbsMean"] = logProbsMean
+    rankMetricsRounds[-1]["featLossMean"] = featLossMean
 
     dataset.split = original_split
     return rankMetricsRounds[-1], rankMetricsRounds
 
 
 def rankQABots(qBot, aBot, dataset, split, exampleLimit=None, beamSize=1):
-    '''
+    """
         Evaluates Q-Bot and A-Bot performance on image retrieval where
         both agents must converse with each other without any ground truth
         dialog. The common caption shown to both agents is not the ground
@@ -178,7 +172,7 @@ def rankQABots(qBot, aBot, dataset, split, exampleLimit=None, beamSize=1):
             exampleLimit : Maximum number of data points to use from
                            the dataset split. If None, all data points.
             beamSize     : Beam search width for generating utterrances
-    '''
+    """
 
     batchSize = dataset.batchSize
     numRounds = dataset.numRounds
@@ -194,7 +188,8 @@ def rankQABots(qBot, aBot, dataset, split, exampleLimit=None, beamSize=1):
         batch_size=batchSize,
         shuffle=False,
         num_workers=0,
-        collate_fn=dataset.collate_fn)
+        collate_fn=dataset.collate_fn,
+    )
 
     gtImgFeatures = []
     roundwiseFeaturePreds = [[] for _ in range(numRounds + 1)]
@@ -205,20 +200,20 @@ def rankQABots(qBot, aBot, dataset, split, exampleLimit=None, beamSize=1):
             break
 
         if dataset.useGPU:
-            batch = {key: v.cuda() for key, v in batch.items() \
-                                            if hasattr(v, 'cuda')}
+            batch = {key: v.cuda() for key, v in batch.items() if hasattr(v, "cuda")}
         else:
-            batch = {key: v.contiguous() for key, v in batch.items() \
-                                            if hasattr(v, 'cuda')}
+            batch = {
+                key: v.contiguous() for key, v in batch.items() if hasattr(v, "cuda")
+            }
 
-        caption = Variable(batch['cap'], volatile=True)
-        captionLens = Variable(batch['cap_len'], volatile=True)
-        gtQuestions = Variable(batch['ques'], volatile=True)
-        gtQuesLens = Variable(batch['ques_len'], volatile=True)
-        answers = Variable(batch['ans'], volatile=True)
-        ansLens = Variable(batch['ans_len'], volatile=True)
-        gtFeatures = Variable(batch['img_feat'], volatile=True)
-        image = Variable(batch['img_feat'], volatile=True)
+        caption = Variable(batch["cap"], volatile=True)
+        captionLens = Variable(batch["cap_len"], volatile=True)
+        gtQuestions = Variable(batch["ques"], volatile=True)
+        gtQuesLens = Variable(batch["ques_len"], volatile=True)
+        answers = Variable(batch["ans"], volatile=True)
+        ansLens = Variable(batch["ans_len"], volatile=True)
+        gtFeatures = Variable(batch["img_feat"], volatile=True)
+        image = Variable(batch["img_feat"], volatile=True)
 
         aBot.eval(), aBot.reset()
         aBot.observe(-1, image=image, caption=caption, captionLens=captionLens)
@@ -230,11 +225,11 @@ def rankQABots(qBot, aBot, dataset, split, exampleLimit=None, beamSize=1):
 
         for round in range(numRounds):
             questions, quesLens = qBot.forwardDecode(
-                inference='greedy', beamSize=beamSize)
+                inference="greedy", beamSize=beamSize
+            )
             qBot.observe(round, ques=questions, quesLens=quesLens)
             aBot.observe(round, ques=questions, quesLens=quesLens)
-            answers, ansLens = aBot.forwardDecode(
-                inference='greedy', beamSize=beamSize)
+            answers, ansLens = aBot.forwardDecode(inference="greedy", beamSize=beamSize)
             aBot.observe(round, ans=answers, ansLens=ansLens)
             qBot.observe(round, ans=answers, ansLens=ansLens)
             predFeatures = qBot.predictImage()
@@ -254,8 +249,7 @@ def rankQABots(qBot, aBot, dataset, split, exampleLimit=None, beamSize=1):
 
     print("Percentile mean rank (round, mean, low, high)")
     for round in range(numRounds + 1):
-        predFeatures = torch.cat(roundwiseFeaturePreds[round],
-                                 0).data.cpu().numpy()
+        predFeatures = torch.cat(roundwiseFeaturePreds[round], 0).data.cpu().numpy()
         dists = pairwise_distances(predFeatures, gtFeatures)
         # num_examples x num_examples
         ranks = []
@@ -273,7 +267,7 @@ def rankQABots(qBot, aBot, dataset, split, exampleLimit=None, beamSize=1):
         percRankLow = 100 * (1 - ((meanRank + se) / poolSize))
         percRankHigh = 100 * (1 - ((meanRank - se) / poolSize))
         print((round, meanPercRank, percRankLow, percRankHigh))
-        rankMetrics['percentile'] = meanPercRank
+        rankMetrics["percentile"] = meanPercRank
         rankMetricsRounds.append(rankMetrics)
 
     dataset.split = original_split
