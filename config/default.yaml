@@ -6,27 +6,25 @@ train:
         optimizer: Adam
         num_epochs: 10
 
-questioner:
-        encoder:
-                type: hre
-                dropout: 0.5
-                rnnHiddenSize: 512
-                embedSize: 1024
-                numLayers: 4
-                useIm: True
-                imgEmbedSize: 512
-                numRounds: 5
+encoder:
+        type: hre
+        dropout: 0.5
+        rnn_hidden_size: 512
+        embed_size: 1024
+        num_layers: 4
+        use_im: True
+        img_embed_size: 512
+        num_rounds: 5
+        start_token: null
+        end_token: null
 
-        decoder:
-                type: gen
-                dropout: 0.5
-                rnnHiddenSize: 512
-                embedSize: 1024
-                numLayers: 4
+decoder:
+        type: gen
+        dropout: 0.5
+        rnn_hidden_size: 512
+        embed_size: 1024
+        num_layers: 4
+        start_token: null
+        end_token: null
 
-answerer:
-        embed_dim: 1024
-        image_embed_dim: 512
-        hidden_dim: 512
-        rnn_output_dim: 512
-        output_dim: 1000
+save_dir: "checkpoints"

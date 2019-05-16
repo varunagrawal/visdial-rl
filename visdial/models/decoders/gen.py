@@ -7,6 +7,18 @@ from torch.distributions import Categorical
 from utils import utilities as utils
 
 
+def create_gen(config):
+    return Decoder(
+        config["vocab_size"],
+        config["embed_size"],
+        config["rnn_hidden_size"],
+        config["num_layers"],
+        config["start_token"],
+        config["end_token"],
+        config["dropout"],
+    )
+
+
 class Decoder(nn.Module):
     def __init__(
         self,

@@ -4,6 +4,20 @@ import torch.nn as nn
 from utils import utilities as utils
 
 
+def create_hre(config):
+    return Encoder(
+        config["vocab_size"],
+        config["embed_size"],
+        config["rnn_hidden_size"],
+        config["num_layers"],
+        config["use_im"],
+        config["img_embed_size"],
+        config["img_feature_size"],
+        config["num_rounds"],
+        config["dropout"],
+    )
+
+
 class Encoder(nn.Module):
     def __init__(
         self,
@@ -15,7 +29,6 @@ class Encoder(nn.Module):
         imgEmbedSize,
         imgFeatureSize,
         numRounds,
-        isAnswerer,
         dropout=0,
         startToken=None,
         endToken=None,
@@ -35,23 +48,21 @@ class Encoder(nn.Module):
         self.imgFeatureSize = imgFeatureSize
         self.numRounds = numRounds
         self.dropout = dropout
-        self.isAnswerer = isAnswerer
         self.startToken = startToken
         self.endToken = endToken
 
         # modules
         self.wordEmbed = nn.Embedding(self.vocabSize, self.embedSize, padding_idx=0)
 
-        # question encoder
         # image fuses early with words
         if self.useIm == "early":
             quesInputSize = self.embedSize + self.imgEmbedSize
-            dialogInputSize = 3 * self.rnnHiddenSize
+            dialogInputSize = self.rnnHiddenSize
             self.imgNet = nn.Linear(self.imgFeatureSize, self.imgEmbedSize)
             self.imgEmbedDropout = nn.Dropout(0.5)
         elif self.useIm == "late":
             quesInputSize = self.embedSize
-            dialogInputSize = 3 * self.rnnHiddenSize + self.imgEmbedSize
+            dialogInputSize = self.rnnHiddenSize + self.imgEmbedSize
             self.imgNet = nn.Linear(self.imgFeatureSize, self.imgEmbedSize)
             self.imgEmbedDropout = nn.Dropout(0.5)
         else:
@@ -75,7 +86,10 @@ class Encoder(nn.Module):
 
         # im2fact
         self.im2hids = nn.Linear(self.imgEmbedSize, self.rnnHiddenSize)
-        self.im2states = nn.Linear(self.imgEmbedSize, self.rnnHiddenSize)
+        self.im2states = (
+            nn.Linear(self.imgEmbedSize, self.rnnHiddenSize),
+            nn.Linear(self.imgEmbedSize, self.rnnHiddenSize),
+        )
 
         # dialog rnn
         self.dialogRNN = nn.LSTMCell(dialogInputSize, self.rnnHiddenSize)
@@ -136,7 +150,7 @@ class Encoder(nn.Module):
         if image is not None:
             assert round == -1
             assert self.image is None
-            self.image = image
+            self.image = image.reshape(-1, self.imgFeatureSize)
             self.imageEmbed = None
             self.batchSize = len(self.image)
         if ques is not None:
@@ -203,7 +217,10 @@ class Encoder(nn.Module):
         if factIdx == 0:
             factEmbed, states = (
                 self.im2hids(self.imageEmbed),
-                [self.im2states(self.imageEmbed)],
+                [
+                    self.im2states[0](self.imageEmbed),
+                    self.im2states[1](self.imageEmbed),
+                ],
             )
         # QAA triplets
         elif factIdx > 0:
@@ -250,8 +267,6 @@ class Encoder(nn.Module):
 
     def concatDialogRNNInput(self, histIdx):
         currIns = [self.factEmbeds[histIdx][0]]
-        if self.isAnswerer:
-            currIns.append(self.questionRNNStates[histIdx][0])
         if self.useIm == "late":
             currIns.append(self.imageEmbed)
         hist_t = torch.cat(currIns, -1)
@@ -274,6 +289,7 @@ class Encoder(nn.Module):
             See notes at the end on how (H, C) are computed.
         """
         round = len(self.questionTokens)
+        print("HRE Forward, round {}".format(round))
 
         # Lazily embed input Image, Captions, Questions and Answers
         self.embedInputDialog()
@@ -286,7 +302,8 @@ class Encoder(nn.Module):
             self.embedFact(factIdx)
 
         # Embed any un-embedded questions
-        while len(self.questionRNNStates) <= round:
+        # Note that there are round - 1 questions
+        while len(self.questionRNNStates) < round:
             qIdx = len(self.questionRNNStates)
             self.embedQuestion(qIdx)
 
@@ -313,7 +330,7 @@ class Encoder(nn.Module):
         """
         factRNNstates = self.factEmbeds[-1][1]  # Latest factRNN states
         C_link = factRNNstates[1]
-        H_link = factRNNstates[0][:-1]
-        H_link = torch.cat([H_link, dialogHidden.unsqueeze(0)], 0)
+        H_link = factRNNstates[0]
+        H_link = torch.cat([H_link, dialogHidden], 0)
 
         return H_link, C_link

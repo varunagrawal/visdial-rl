@@ -204,17 +204,33 @@ class PulpDataset(Dataset):
                 torch.from_numpy(self.data[idx]["question_wids"].astype(np.int64))
             )
             ques_lens.append(torch.LongTensor(self.data[idx]["question_length"]))
-            answers_1.append(self.data[idx]["answer_id"])
+            if "answer_id" not in self.data[idx]:
+                #print("answer_id missing for question {}".format(idx))
+                answers_1.append(9)
+            else:
+                answers_1.append(self.data[idx]["answer_id"])
         for q in ques_2_ids:
-            answers_2.append(self.data[idx]["answer_id"])
+            if "answer_id" not in self.data[idx]:
+                #print("answer_id missing for question {}".format(idx))
+                answers_2.append(0)
+            else:
+                answers_2.append(self.data[idx]["answer_id"])
 
         questions = torch.cat(questions).unsqueeze(0)
         question_lens = torch.cat(ques_lens).unsqueeze(0)
         answers_1 = torch.LongTensor(answers_1).unsqueeze(0)
         answers_2 = torch.LongTensor(answers_2).unsqueeze(0)
 
-        img_feat_1 = self.normalize_feature(self.images[image_1])
-        img_feat_2 = self.normalize_feature(self.images[image_2])
+        try:
+            img_feat_1 = self.normalize_feature(self.images[image_1])
+        except KeyError:
+            print("Image {} missing".format(image_1))
+            img_feat_1 = self.normalize_feature(self.images[572])
+        try:
+            img_feat_2 = self.normalize_feature(self.images[image_2])
+        except KeyError:
+            print("Image {} missing".format(image_2))
+            img_feat_2 = self.normalize_feature(self.images[572])
 
         d = {
             "image_1": img_feat_1,

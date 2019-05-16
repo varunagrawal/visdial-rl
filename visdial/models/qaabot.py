@@ -7,7 +7,7 @@ from utils import utilities as utils
 
 
 class QAABot(Agent):
-    def __init__(self, encoderParam, decoderParam, imgFeatureSize=0, verbose=1):
+    def __init__(self, config, imgFeatureSize=0, verbose=1):
         """
             QAA-Bot Model
 
@@ -15,11 +15,13 @@ class QAABot(Agent):
             history), a decoder network for generating a response (question),
             and answerer networks for answering its own questions.
         """
-        super(Questioner, self).__init__()
+        super(QAABot, self).__init__()
+        encoderParam = config["encoder"]
+        decoderParam = config["decoder"]
         self.encType = encoderParam["type"]
         self.decType = decoderParam["type"]
         self.dropout = encoderParam["dropout"]
-        self.rnnHiddenSize = encoderParam["rnnHiddenSize"]
+        self.rnnHiddenSize = encoderParam["rnn_hidden_size"]
         self.imgFeatureSize = imgFeatureSize
         encoderParam = encoderParam.copy()
 
@@ -28,13 +30,13 @@ class QAABot(Agent):
             print("Encoder: " + self.encType)
             print("Decoder: " + self.decType)
         if "hre" in self.encType:
-            self.encoder = hre_enc.Encoder(**encoderParam)
+            self.encoder = hre_enc.create_hre(config["encoder"])
         else:
             raise Exception("Unknown encoder {}".format(self.encType))
 
         # Decoder
         if "gen" == self.decType:
-            self.decoder = gen_dec.Decoder(**decoderParam)
+            self.decoder = gen_dec.create_gen(config["decoder"])
         else:
             raise Exception("Unkown decoder {}".format(self.decType))
 
@@ -45,10 +47,9 @@ class QAABot(Agent):
         # Share word embedding parameters between encoder and decoder
         self.decoder.wordEmbed = self.encoder.wordEmbed
 
-        # Setup feature regressor
-        if self.imgFeatureSize:
-            self.featureNet = nn.Linear(self.rnnHiddenSize, self.imgFeatureSize)
-            self.featureNetInputDropout = nn.Dropout(0.5)
+        # Create discriminator
+        self.featureNet = nn.Linear(self.rnnHiddenSize, 1)
+        self.featureNetInputDropout = nn.Dropout(0.5)
 
         # Initialize weights
         utils.initializeWeights(self.encoder)
@@ -66,7 +67,7 @@ class QAABot(Agent):
             for param in net.parameters():
                 param.requires_grad = False
 
-    def observe(self, round, ques=None, **kwargs):
+    def observe(self, round, ques=None, image=None, image2=None, **kwargs):
         """
         Update Q-Bot percepts. See self.encoder.observe() in the corresponding
         encoder class definition (hre).
@@ -82,7 +83,7 @@ class QAABot(Agent):
         if image2 is not None:
             self.image2 = image2
 
-        self.encoder.observe(round, ques=ques, **kwargs)
+        self.encoder.observe(round, ques=ques, image=image, **kwargs)
 
     def forward(self):
         """
@@ -120,7 +121,7 @@ class QAABot(Agent):
         ans2, ansLens2 = self.answerer2(self.image2, questions, quesLens)
         return questions, quesLens, ans, ansLens, ans2, ansLens2
 
-    def predictImage(self):
+    def discriminate(self):
         """
         Predict/guess an fc7 vector given the current conversation history. This can
         be called at round 0 after the caption is observed, and at end of every round
