@@ -23,21 +23,20 @@ def collate_fn(batch):
 
 
 def get_dataloader(
-    images,
-    annotations,
-    questions,
-    pairs,
-    split="train",
-    maps=None,
-    vocab=None,
-    shuffle=False,
-    batch_size=1,
-    num_workers=0,
+        images,
+        annotations,
+        questions,
+        pairs,
+        split="train",
+        maps=None,
+        vocab=None,
+        shuffle=False,
+        batch_size=1,
+        num_workers=0,
 ):
     return data.DataLoader(
-        PulpDataset(
-            images, annotations, questions, pairs, split, vocab=vocab, maps=maps
-        ),
+        PulpDataset(images, annotations, questions,
+                    pairs, split, vocab=vocab, maps=maps),
         batch_size=batch_size,
         num_workers=num_workers,
         shuffle=shuffle,
@@ -46,15 +45,15 @@ def get_dataloader(
 
 class PulpDataset(Dataset):
     def __init__(
-        self,
-        images_dataset,
-        annotations_file,
-        questions_file,
-        pairs_file,
-        split="train",
-        num_rounds=5,
-        vocab=None,
-        maps=None,
+            self,
+            images_dataset,
+            annotations_file,
+            questions_file,
+            pairs_file,
+            split="train",
+            num_rounds=5,
+            vocab=None,
+            maps=None,
     ):
         """
             Initialize the dataset with split given by 'split', where
@@ -97,12 +96,15 @@ class PulpDataset(Dataset):
             q_id = q["question_id"]
             self.im2ques_id[image_id].append(q_id)
 
-        self.question_index = {q["question_id"]: idx for idx, q in enumerate(self.data)}
+        self.question_index = {
+            q["question_id"]: idx for idx, q in enumerate(self.data)
+        }
 
     def prepare_dataset(self, annotations, questions, split="train", maps=None):
-        self.data, self.vocab, self.word_to_wid, self.wid_to_word, self.ans_to_aid, self.aid_to_ans = process_vqa_dataset(
-            questions, annotations, split, maps
-        )
+        self.data, self.vocab, \
+            self.word_to_wid, self.wid_to_word, \
+            self.ans_to_aid, self.aid_to_ans, \
+            self.top_answers = process_vqa_dataset(questions, annotations,split, maps)
 
         # Add <START> and <END> to vocabulary
         word_count = len(self.word_to_wid)
@@ -197,40 +199,24 @@ class PulpDataset(Dataset):
             ques_2_ids[ques_ids.index(q1)] = q2
 
         questions, ques_lens, answers_1, answers_2 = [], [], [], []
-        # Get the question token, answer token tensors for each of the questions and concatenate them
+        # Get the question token, answer token tensors for each of the questions
+        # and concatenate them
         for q in ques_ids:
             idx = self.question_index[q]
-            questions.append(
-                torch.from_numpy(self.data[idx]["question_wids"].astype(np.int64))
-            )
+            questions.append(torch.from_numpy(
+                self.data[idx]["question_wids"].astype(np.int64)))
             ques_lens.append(torch.LongTensor(self.data[idx]["question_length"]))
-            if "answer_id" not in self.data[idx]:
-                #print("answer_id missing for question {}".format(idx))
-                answers_1.append(9)
-            else:
-                answers_1.append(self.data[idx]["answer_id"])
+            answers_1.append(self.data[idx]["answer_id"])
         for q in ques_2_ids:
-            if "answer_id" not in self.data[idx]:
-                #print("answer_id missing for question {}".format(idx))
-                answers_2.append(0)
-            else:
-                answers_2.append(self.data[idx]["answer_id"])
+            answers_2.append(self.data[idx]["answer_id"])
 
         questions = torch.cat(questions).unsqueeze(0)
         question_lens = torch.cat(ques_lens).unsqueeze(0)
         answers_1 = torch.LongTensor(answers_1).unsqueeze(0)
         answers_2 = torch.LongTensor(answers_2).unsqueeze(0)
 
-        try:
-            img_feat_1 = self.normalize_feature(self.images[image_1])
-        except KeyError:
-            print("Image {} missing".format(image_1))
-            img_feat_1 = self.normalize_feature(self.images[572])
-        try:
-            img_feat_2 = self.normalize_feature(self.images[image_2])
-        except KeyError:
-            print("Image {} missing".format(image_2))
-            img_feat_2 = self.normalize_feature(self.images[572])
+        img_feat_1 = self.normalize_feature(self.images[image_1].unsqueeze(0))
+        img_feat_2 = self.normalize_feature(self.images[image_2].unsqueeze(0))
 
         d = {
             "image_1": img_feat_1,
@@ -283,7 +269,7 @@ class PulpDataset(Dataset):
                 print("Warning: Skipping empty sequence at (%d)" % thId)
                 continue
 
-            sequence[thId, 1 : length + 1] = seq[thId, :length]
+            sequence[thId, 1: length + 1] = seq[thId, :length]
             sequence[thId, length + 1] = end_token_id
 
         # Sequence length is number of tokens + 1
@@ -293,15 +279,9 @@ class PulpDataset(Dataset):
         return seq, seq_len
 
 
-def process_vqa_dataset(
-    questions,
-    annotations,
-    split,
-    maps=None,
-    top_answer_limit=1000,
-    max_length=26,
-    year=2014,
-):
+def process_vqa_dataset(questions, annotations, split,
+                        maps=None, top_answer_limit=1000, 
+                        max_length=26, year=2014):
     """
     Process the questions and annotations into a consolidated dataset.
     This is done only for the training set.
@@ -319,7 +299,7 @@ def process_vqa_dataset(
     # Check if preprocessed cache exists. If yes, load it up, else preprocess the data
     if os.path.exists(cache_file):
         print("Found {0} set cache! Loading...".format(split))
-        dataset, vocab, word_to_wid, wid_to_word, ans_to_aid, aid_to_ans = pickle.load(
+        dataset, vocab, word_to_wid, wid_to_word, ans_to_aid, aid_to_ans, top_answers = pickle.load(
             open(cache_file, "rb")
         )
 
@@ -346,7 +326,8 @@ def process_vqa_dataset(
             dataset.append(d)
 
         if split == "train":
-            # Get the top N answers so we can filter the dataset to only questions with these answers
+            # Get the top N answers so we can filter the dataset to only questions
+            # with these answers
             top_answers = text.get_top_answers(dataset, top_answer_limit)
             dataset = text.filter_dataset(dataset, top_answers)
 
@@ -364,6 +345,10 @@ def process_vqa_dataset(
             dataset = text.encode_answers(dataset, ans_to_aid)
 
         else:  # split == "val":
+            # filter the dataset to remove answers not in top_answers
+            top_answers = maps['top_answers']
+            dataset = text.filter_dataset(dataset, top_answers)
+
             # Process the questions
             dataset = text.preprocess_questions(dataset)
 
@@ -375,24 +360,27 @@ def process_vqa_dataset(
             aid_to_ans = maps["aid_to_ans"]
 
             dataset = text.remove_tail_words(dataset, vocab)
+            dataset = text.encode_answers(dataset, ans_to_aid)
 
         dataset = text.encode_questions(dataset, word_to_wid, max_length)
 
         print("Caching the processed data")
         pickle.dump(
-            [dataset, vocab, word_to_wid, wid_to_word, ans_to_aid, aid_to_ans],
+            [dataset, vocab, word_to_wid, wid_to_word, ans_to_aid, aid_to_ans, top_answers],
             open(cache_file, "wb+"),
         )
 
-    return dataset, vocab, word_to_wid, wid_to_word, ans_to_aid, aid_to_ans
+    return dataset, vocab, word_to_wid, wid_to_word, ans_to_aid, aid_to_ans, top_answers
 
 
 if __name__ == "__main__":
     vqa_loader = get_dataloader(
         "image_embeddings/coco_train_vgg19_bn_fc7.pth",
         osp.expanduser("~/datasets/VQA2/v2_mscoco_train2014_annotations.json"),
-        osp.expanduser("~/datasets/VQA2/v2_OpenEnded_mscoco_train2014_questions.json"),
-        osp.expanduser("~/datasets/VQA2/v2_mscoco_train2014_complementary_pairs.json"),
+        osp.expanduser(
+            "~/datasets/VQA2/v2_OpenEnded_mscoco_train2014_questions.json"),
+        osp.expanduser(
+            "~/datasets/VQA2/v2_mscoco_train2014_complementary_pairs.json"),
         split="train",
     )
 

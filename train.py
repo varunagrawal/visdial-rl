@@ -46,6 +46,7 @@ def create_data_loaders(config):
         "ans_to_aid": data_loaders["train"].dataset.ans_to_aid,
         "aid_to_ans": data_loaders["train"].dataset.aid_to_ans,
         "vocab": data_loaders["train"].dataset.vocab,
+        "top_answers": data_loaders["train"].dataset.top_answers
     }
     data_loaders["val"] = get_dataloader(
         Path(args.data, "coco_val_resnet152_pool5.pth"),
@@ -179,7 +180,7 @@ if __name__ == "__main__":
     vocab_size = len(maps["wid_to_word"])
     config["encoder"]["vocab_size"] = vocab_size
     config["decoder"]["vocab_size"] = vocab_size
-    img_feature_size = data_loaders["train"].dataset[0]["image_1"].size(1)
+    img_feature_size = data_loaders["train"].dataset[0]["image_1"].size(0)
     config["encoder"]["img_feature_size"] = img_feature_size
     config["decoder"]["img_feature_size"] = img_feature_size
     model = create_model(config, img_feature_size, maps, device, checkpoint)
